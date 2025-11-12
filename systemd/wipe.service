@@ -1,0 +1,26 @@
+[Unit]
+Description=Wipe Daemon - Monitoring Service
+After=network.target
+
+[Service]
+Type=simple
+# Change this to the appropriate user
+User=%i
+# Ensure /opt directories exist with proper permissions before starting (runs as root with +)
+ExecStartPre=+/bin/sh -c 'mkdir -p /opt/rust /opt/carbon /opt/wipe-cli && chown %i:%i /opt/rust /opt/carbon /opt/wipe-cli'
+ExecStart=/usr/local/bin/wiped
+Restart=always
+RestartSec=10
+
+# Security settings
+# Note: NoNewPrivileges is disabled to allow sudo for systemctl operations
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wiped
+
+[Install]
+WantedBy=multi-user.target
+
