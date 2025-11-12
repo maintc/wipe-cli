@@ -7,9 +7,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/maintc/wipe-cli/internal/calendar"
 	"github.com/maintc/wipe-cli/internal/config"
 	"github.com/maintc/wipe-cli/internal/discord"
 )
@@ -260,9 +260,12 @@ echo "✓ Map preparation complete"
 	return nil
 }
 
-// ExecuteEvent processes a scheduled event (restart or wipe)
-func ExecuteEvent(event *calendar.ScheduledEvent, servers []config.Server, webhookURL string, eventDelay int) error {
-	log.Printf("Executing %s event for %d server(s)", event.Type, len(servers))
+// ExecuteEventBatch processes multiple servers together (mix of restarts and wipes)
+func ExecuteEventBatch(servers []config.Server, wipeServers map[string]bool, webhookURL string, eventDelay int) error {
+	wipeCount := len(wipeServers)
+	restartCount := len(servers) - wipeCount
+
+	log.Printf("Executing batch event for %d server(s): %d restart(s), %d wipe(s)", len(servers), restartCount, wipeCount)
 
 	// Wait for configured delay
 	if eventDelay > 0 {
@@ -275,12 +278,11 @@ func ExecuteEvent(event *calendar.ScheduledEvent, servers []config.Server, webho
 	for i, s := range servers {
 		serverNames[i] = s.Name
 	}
-	eventTitle := capitalizeFirst(string(event.Type))
-	discord.SendInfo(webhookURL, fmt.Sprintf("%s Event Starting", eventTitle),
-		fmt.Sprintf("Starting %s for **%d** server(s):\n• %s",
-			event.Type, len(servers), strings.Join(serverNames, "\n• ")))
+	discord.SendInfo(webhookURL, "Batch Event Starting",
+		fmt.Sprintf("Starting batch event for **%d** server(s):\n• %s\n\n**%d restart(s), %d wipe(s)**",
+			len(servers), strings.Join(serverNames, "\n• "), restartCount, wipeCount))
 
-	// Step 1: Stop all servers
+	// Step 1: Stop all servers at once
 	serverPaths := make([]string, len(servers))
 	for i, s := range servers {
 		serverPaths[i] = s.Path
@@ -290,57 +292,56 @@ func ExecuteEvent(event *calendar.ScheduledEvent, servers []config.Server, webho
 	if err := stopServers(serverPaths); err != nil {
 		errMsg := fmt.Sprintf("Failed to stop servers: %v", err)
 		log.Printf("Error: %s", errMsg)
-		eventTitle := capitalizeFirst(string(event.Type))
-		discord.SendError(webhookURL, fmt.Sprintf("%s Event Failed", eventTitle), errMsg)
+		discord.SendError(webhookURL, "Batch Event Failed", errMsg)
 		return fmt.Errorf("%s", errMsg)
 	}
 
-	// Step 2: Update Rust and Carbon for each server
+	// Step 2: Update Rust and Carbon for all servers (in parallel)
 	log.Printf("Updating Rust and Carbon on servers...")
-	for _, server := range servers {
-		if err := syncServer(server); err != nil {
-			errMsg := fmt.Sprintf("Failed to update server %s: %v", server.Name, err)
-			log.Printf("Error: %s", errMsg)
-			discord.SendError(webhookURL, fmt.Sprintf("%s Event Failed", capitalizeFirst(string(event.Type))), errMsg)
-			return fmt.Errorf("%s", errMsg)
-		}
+	if err := SyncServers(servers); err != nil {
+		errMsg := fmt.Sprintf("Failed to update servers: %v", err)
+		log.Printf("Error: %s", errMsg)
+		discord.SendError(webhookURL, "Batch Event Failed", errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 
-	// Step 3: If wipe, delete map/save files
-	if event.Type == calendar.EventTypeWipe {
-		log.Printf("Performing wipe cleanup...")
+	// Step 3: Wipe data for wipe-servers only
+	if len(wipeServers) > 0 {
+		log.Printf("Performing wipe cleanup for %d server(s)...", len(wipeServers))
 		for _, server := range servers {
-			if err := wipeServerData(server); err != nil {
-				errMsg := fmt.Sprintf("Failed to wipe data for server %s: %v", server.Name, err)
-				log.Printf("Error: %s", errMsg)
-				discord.SendError(webhookURL, "Wipe Event Failed", errMsg)
-				return fmt.Errorf("%s", errMsg)
+			if wipeServers[server.Path] {
+				log.Printf("  Wiping data for %s", server.Name)
+				if err := wipeServerData(server); err != nil {
+					errMsg := fmt.Sprintf("Failed to wipe data for server %s: %v", server.Name, err)
+					log.Printf("Error: %s", errMsg)
+					discord.SendError(webhookURL, "Batch Event Failed", errMsg)
+					return fmt.Errorf("%s", errMsg)
+				}
 			}
 		}
 	}
 
 	// Step 4: Run pre-start hook once with all server paths
-	// (serverPaths already declared earlier)
 	if err := runPreStartHook(serverPaths); err != nil {
 		log.Printf("Warning: Pre-start hook failed: %v", err)
 		// Don't fail the entire operation if hook fails
 	}
 
-	// Step 5: Start all servers
+	// Step 5: Start all servers at once
 	log.Printf("Starting %d server(s)...", len(servers))
 	if err := startServers(serverPaths); err != nil {
 		errMsg := fmt.Sprintf("Failed to start servers: %v", err)
 		log.Printf("Error: %s", errMsg)
-		discord.SendError(webhookURL, fmt.Sprintf("%s Event Failed", capitalizeFirst(string(event.Type))), errMsg)
+		discord.SendError(webhookURL, "Batch Event Failed", errMsg)
 		return fmt.Errorf("%s", errMsg)
 	}
 
 	// Success notification
-	discord.SendSuccess(webhookURL, fmt.Sprintf("%s Event Complete", capitalizeFirst(string(event.Type))),
-		fmt.Sprintf("Successfully completed %s for **%d** server(s):\n• %s",
-			event.Type, len(servers), strings.Join(serverNames, "\n• ")))
+	discord.SendSuccess(webhookURL, "Batch Event Complete",
+		fmt.Sprintf("Successfully completed batch event for **%d** server(s):\n• %s\n\n**%d restart(s), %d wipe(s)**",
+			len(servers), strings.Join(serverNames, "\n• "), restartCount, wipeCount))
 
-	log.Printf("✓ %s event completed successfully", event.Type)
+	log.Printf("✓ Batch event completed successfully")
 	return nil
 }
 
@@ -380,13 +381,44 @@ func startServers(serverPaths []string) error {
 	return nil
 }
 
-// SyncServers updates Rust and Carbon installations on multiple servers
+// SyncServers updates Rust and Carbon installations on multiple servers in parallel
 func SyncServers(servers []config.Server) error {
+	type result struct {
+		server config.Server
+		err    error
+	}
+
+	results := make(chan result, len(servers))
+	var wg sync.WaitGroup
+
+	// Launch parallel sync operations
 	for _, server := range servers {
-		if err := syncServer(server); err != nil {
-			return fmt.Errorf("failed to update %s: %w", server.Name, err)
+		wg.Add(1)
+		go func(s config.Server) {
+			defer wg.Done()
+			err := syncServer(s)
+			results <- result{server: s, err: err}
+		}(server)
+	}
+
+	// Wait for all syncs to complete
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Collect results and check for errors
+	var errors []string
+	for res := range results {
+		if res.err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", res.server.Name, res.err))
 		}
 	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("failed to update servers:\n  - %s", strings.Join(errors, "\n  - "))
+	}
+
 	return nil
 }
 
@@ -418,8 +450,8 @@ func syncServer(server config.Server) error {
 		}
 	}
 
-	// Rsync Rust
-	rsyncCmd := exec.Command("rsync", "-av", fmt.Sprintf("%s/", rustSource), fmt.Sprintf("%s/", server.Path))
+	// Rsync Rust (safe mode: uses temp files for atomic updates)
+	rsyncCmd := exec.Command("rsync", "-a", fmt.Sprintf("%s/", rustSource), fmt.Sprintf("%s/", server.Path))
 	output, err := rsyncCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("rust rsync failed: %w\nOutput: %s", err, output)
@@ -440,8 +472,8 @@ func syncServer(server config.Server) error {
 		}
 	}
 
-	// Rsync Carbon
-	rsyncCmd = exec.Command("rsync", "-av", fmt.Sprintf("%s/", carbonSource), fmt.Sprintf("%s/", server.Path))
+	// Rsync Carbon (safe mode: uses temp files for atomic updates)
+	rsyncCmd = exec.Command("rsync", "-a", fmt.Sprintf("%s/", carbonSource), fmt.Sprintf("%s/", server.Path))
 	output, err = rsyncCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("carbon rsync failed: %w\nOutput: %s", err, output)
@@ -508,12 +540,4 @@ func runPreStartHook(serverPaths []string) error {
 	}
 
 	return nil
-}
-
-// capitalizeFirst capitalizes the first letter of a string
-func capitalizeFirst(s string) string {
-	if len(s) == 0 {
-		return s
-	}
-	return strings.ToUpper(s[:1]) + s[1:]
 }

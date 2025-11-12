@@ -345,51 +345,26 @@ func (s *Scheduler) executeEventGroup(timeKey string, events []ScheduledEvent) {
 		return
 	}
 
-	// Group by event type (all wipes together, all restarts together)
-	wipes := []ScheduledEvent{}
-	restarts := []ScheduledEvent{}
+	// Process all events together (restarts and wipes in single batch)
+	// Extract all servers
+	servers := make([]config.Server, len(events))
+	wipeServers := make(map[string]bool) // Track which servers need wipe
 
-	for _, event := range events {
+	for i, event := range events {
+		servers[i] = event.Server
 		if event.Event.Type == calendar.EventTypeWipe {
-			wipes = append(wipes, event)
-		} else {
-			restarts = append(restarts, event)
+			wipeServers[event.Server.Path] = true
 		}
 	}
 
-	// Execute restarts first (if any) - faster operations
-	if len(restarts) > 0 {
-		s.executeGroup(timeKey, restarts, calendar.EventTypeRestart)
-	}
-
-	// Then execute wipes (typically take longer)
-	if len(wipes) > 0 {
-		s.executeGroup(timeKey, wipes, calendar.EventTypeWipe)
-	}
-}
-
-// executeGroup executes a group of events of the same type
-func (s *Scheduler) executeGroup(timeKey string, events []ScheduledEvent, eventType calendar.EventType) {
-	// Extract servers
-	servers := make([]config.Server, len(events))
-	for i, event := range events {
-		servers[i] = event.Server
-	}
-
-	// Create a calendar event for the executor
-	calEvent := &calendar.ScheduledEvent{
-		Type:      eventType,
-		StartTime: events[0].Scheduled,
-	}
-
-	// Mark as executed before running (to prevent duplicates if it takes a while)
+	// Mark as executed before running (to prevent duplicates)
 	for _, event := range events {
 		eventKey := fmt.Sprintf("%s-%s-%s", timeKey, event.Server.Path, event.Event.Type)
 		s.executedEvents[eventKey] = true
 	}
 
-	// Execute via executor
-	if err := executor.ExecuteEvent(calEvent, servers, s.webhookURL, s.eventDelay); err != nil {
-		log.Printf("Error executing %s event: %v", eventType, err)
+	// Execute all servers together, passing which ones need wipes
+	if err := executor.ExecuteEventBatch(servers, wipeServers, s.webhookURL, s.eventDelay); err != nil {
+		log.Printf("Error executing event group: %v", err)
 	}
 }

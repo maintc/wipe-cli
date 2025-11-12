@@ -4,7 +4,7 @@
 
 ## 📖 What It Does
 
-Rust game servers often have scheduled restart and wipe events tracked in Google Calendar. This tool:
+Server owners can schedule restart and wipe events in Google Calendar. This tool:
 
 - 📅 **Monitors multiple Google Calendar iCal feeds** (one per server)
 - 🔍 **Detects upcoming events** within a configurable time window (default: 24 hours)
@@ -30,12 +30,19 @@ The two components communicate via a shared configuration file stored at `~/.con
 When a restart or wipe event occurs:
 
 1. 🛑 **Stop servers** → Calls `/opt/wipe-cli/stop-servers.sh` with server paths
-2. 📦 **Update Rust & Carbon** → Installs/updates Rust and Carbon
-3. 🧹 **Wipe data** (wipes only) → Deletes map, save, and blueprint files (configurable)
-4. 🔧 **Run hook** → Calls `/opt/wipe-cli/pre-start-hook.sh` once with all server paths
+2. 📦 **Update Rust & Carbon** → Syncs from `/opt/rust/{branch}` and `/opt/carbon/{branch}` (parallel)
+3. 🧹 **Wipe data** (wipes only) → Deletes map, save, and blueprint files (see below)
+4. 🔧 **Run hook** → Calls `/opt/wipe-cli/pre-start-hook.sh` with all server paths
 5. ▶️ **Start servers** → Calls `/opt/wipe-cli/start-servers.sh` with server paths
 
 All scripts receive server paths as arguments, allowing you to integrate with your existing infrastructure.
+
+**Files deleted during wipes** (from `server/{identity}/` directory):
+- `*.map` - Map files
+- `*.sav*` - Save files
+- `player.states.*.db*` - Player state databases
+- `sv.files.*.db*` - Server file databases
+- `player.blueprints.*` - Blueprints (only if `wipe_blueprints: true`)
 
 ## Project Structure
 
@@ -86,14 +93,16 @@ sudo systemctl enable wipe@$USER.service
 sudo systemctl start wipe@$USER.service
 ```
 
+**Note:** The service uses `wipe@{username}.service` format - replace `$USER` with your actual username if needed. The daemon runs as your user and accesses your `~/.config/wipe/config.yaml`.
+
 ### 📜 Management Scripts
 
 The daemon automatically creates default management scripts in `/opt/wipe-cli/` on first run:
 
 - 🛑 `stop-servers.sh` - Called to stop servers before restart/wipe
 - ▶️ `start-servers.sh` - Called to start servers after restart/wipe
-- 🔧 `pre-start-hook.sh` - Called once after updating Rust & Carbon but before server start
-- 🗺️ `generate-maps.sh` - Called 22 hours before wipes (if `generate_map: true`)
+- 🔧 `pre-start-hook.sh` - Called after updating Rust & Carbon but before server start
+- 🗺️ `generate-maps.sh` - Called by default 22 hours before wipes (if `generate_map: true`)
 
 **⚠️ These are template scripts - you must edit them to match your infrastructure!**
 
@@ -153,14 +162,18 @@ wipe add \
 # List all configured servers
 wipe list
 
-# Update server settings (use server name or full path)
+# Update server settings (accepts server name or full path)
 wipe update us-weekly \
   --calendar https://new-url.com/cal.ics \
   --branch staging \
   --generate-map
 
-# Remove a server (use server name or full path)
+# You can also use full path
+wipe update /var/www/servers/us-weekly --branch main
+
+# Remove a server (accepts server name or full path)
 wipe remove us-weekly
+# Or: wipe remove /var/www/servers/us-weekly
 ```
 
 ### ⚙️ Configuration
@@ -186,7 +199,12 @@ wipe sync us-weekly --force  # Skip confirmation prompt
 
 # Manually call a management script for specific servers
 wipe call-script us-weekly us-long --script stop-servers
+wipe call-script us-weekly --script start-servers
 wipe call-script us-weekly --script generate-maps
+
+# Reset all management scripts to defaults (includes pre-start-hook.sh)
+wipe reset-scripts
+wipe reset-scripts --force  # Skip confirmation prompt
 ```
 
 ### 📊 Service Management
@@ -323,11 +341,19 @@ If a server has both a restart and wipe at the same time, only the wipe is execu
 
 ### 📊 Event Grouping
 
-Events occurring at the same time are automatically grouped:
-- ⚡ Multiple servers restarting at 11:00 → **One batch operation**
-- 🔄 Restarts always execute before wipes when grouped (restarts are faster)
+Events occurring at the same time are automatically grouped into **one unified batch**:
+- ⚡ **All servers stop at once** (prevents systemd from auto-restarting during updates)
+- 🚀 **All servers update in parallel** (Rust + Carbon synced simultaneously)
+- 🧹 **Wipe-specific cleanup** only runs for servers with wipe events
+- 🔧 **Pre-start hook runs once** for all servers in the batch
+- ✅ **All servers start together**
 
-This minimizes downtime and ensures efficient execution.
+**Example:** 2 servers restarting + 2 servers wiping at 11:00 → **One batch operation**
+
+This ensures:
+- No race conditions with systemd auto-restart
+- Minimal downtime
+- Efficient parallel execution
 
 ### 🔄 Update Checking
 
@@ -336,6 +362,36 @@ The daemon checks for Rust and Carbon updates every 2 minutes:
 - 🔌 **Carbon**: Checks GitHub releases for production/staging builds
 - 📦 Updates are automatically installed to `/opt/rust/{branch}` and `/opt/carbon/{branch}`
 - 🛡️ Cascade protection prevents multiple simultaneous updates
+
+### 📢 Discord Notifications
+
+The daemon sends webhook notifications for key events:
+
+**🎯 Event Operations:**
+- `Batch Event Starting` - When servers begin restart/wipe operations
+- `Batch Event Complete` - After successful completion
+- `Batch Event Failed` - If any step fails during execution
+
+**📅 Calendar Changes:**
+- `Calendar Events Added` - New events detected in calendars
+- `Calendar Events Removed` - Events deleted from calendars
+
+**🔄 Installation & Updates:**
+- `Rust Installation Complete` - Initial Rust branch installation
+- `Rust Update Complete` - Rust branch updated to new build
+- `Rust Update Available` - New Rust build detected (before install)
+- `Rust Installation Failed` - Rust installation error
+- `Carbon Installation Complete` - Initial Carbon installation
+- `Carbon Update Available` - New Carbon version detected
+- `Carbon Installation Failed` - Carbon installation error
+
+**⚙️ Service Management:**
+- `Wipe Service Started` - Daemon startup notification
+- `Server Added` - Server added to configuration
+- `Server Removed` - Server removed from configuration
+- `Map Generation Failed` - generate-maps.sh script error
+
+All notifications include the hostname for easy identification in multi-server environments.
 
 ## 🛠️ Development
 
