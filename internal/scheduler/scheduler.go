@@ -357,14 +357,14 @@ func (s *Scheduler) executeEventGroup(timeKey string, events []ScheduledEvent) {
 		}
 	}
 
-	// Execute wipes first (if any)
-	if len(wipes) > 0 {
-		s.executeGroup(timeKey, wipes, calendar.EventTypeWipe)
-	}
-
-	// Then execute restarts
+	// Execute restarts first (if any) - faster operations
 	if len(restarts) > 0 {
 		s.executeGroup(timeKey, restarts, calendar.EventTypeRestart)
+	}
+
+	// Then execute wipes (typically take longer)
+	if len(wipes) > 0 {
+		s.executeGroup(timeKey, wipes, calendar.EventTypeWipe)
 	}
 }
 

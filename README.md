@@ -325,7 +325,7 @@ If a server has both a restart and wipe at the same time, only the wipe is execu
 
 Events occurring at the same time are automatically grouped:
 - ⚡ Multiple servers restarting at 11:00 → **One batch operation**
-- 🧹 Wipes always execute before restarts when grouped
+- 🔄 Restarts always execute before wipes when grouped (restarts are faster)
 
 This minimizes downtime and ensures efficient execution.
 
