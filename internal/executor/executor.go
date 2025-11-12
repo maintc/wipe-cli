@@ -195,7 +195,7 @@ func ensureGenerateMapsScript() error {
 # Generate Maps Script
 #
 # This script is called to prepare maps for Rust servers before wipes.
-# It runs 24 hours before a wipe event (configurable via map_generation_hours).
+# It runs 22 hours before a wipe event (configurable via map_generation_hours).
 #
 # Arguments passed to this script:
 #   $@ - Space-separated list of server paths that need maps prepared
@@ -295,11 +295,11 @@ func ExecuteEvent(event *calendar.ScheduledEvent, servers []config.Server, webho
 		return fmt.Errorf("%s", errMsg)
 	}
 
-	// Step 2: Sync Rust and Carbon for each server
-	log.Printf("Syncing Rust and Carbon installations...")
+	// Step 2: Update Rust and Carbon for each server
+	log.Printf("Updating Rust and Carbon on servers...")
 	for _, server := range servers {
 		if err := syncServer(server); err != nil {
-			errMsg := fmt.Sprintf("Failed to sync server %s: %v", server.Name, err)
+			errMsg := fmt.Sprintf("Failed to update server %s: %v", server.Name, err)
 			log.Printf("Error: %s", errMsg)
 			discord.SendError(webhookURL, fmt.Sprintf("%s Event Failed", capitalizeFirst(string(event.Type))), errMsg)
 			return fmt.Errorf("%s", errMsg)
@@ -380,32 +380,30 @@ func startServers(serverPaths []string) error {
 	return nil
 }
 
-// SyncServers syncs Rust and Carbon installations to multiple servers
+// SyncServers updates Rust and Carbon installations on multiple servers
 func SyncServers(servers []config.Server) error {
 	for _, server := range servers {
 		if err := syncServer(server); err != nil {
-			return fmt.Errorf("failed to sync %s: %w", server.Name, err)
+			return fmt.Errorf("failed to update %s: %w", server.Name, err)
 		}
 	}
 	return nil
 }
 
-// syncServer syncs Rust and Carbon installations to the server path
+// syncServer updates Rust and Carbon installations on the server
 func syncServer(server config.Server) error {
-	log.Printf("Syncing server: %s", server.Name)
+	log.Printf("Updating server: %s", server.Name)
 
 	// Determine source paths based on branch
 	rustSource := filepath.Join("/opt/rust", server.Branch)
-	carbonSource := "/opt/carbon"
+	carbonSource := filepath.Join("/opt/carbon", server.Branch)
 	if server.Branch == "" {
 		rustSource = filepath.Join("/opt/rust", "main")
-	}
-	if server.Branch != "" && server.Branch != "main" {
-		carbonSource = fmt.Sprintf("/opt/carbon-%s", server.Branch)
+		carbonSource = filepath.Join("/opt/carbon", "main")
 	}
 
-	// Sync Rust
-	log.Printf("  Syncing Rust from %s to %s", rustSource, server.Path)
+	// Update Rust
+	log.Printf("  Updating Rust from %s to %s", rustSource, server.Path)
 
 	// Remove old Rust files first
 	rustCleanupDirs := []string{
@@ -427,8 +425,8 @@ func syncServer(server config.Server) error {
 		return fmt.Errorf("rust rsync failed: %w\nOutput: %s", err, output)
 	}
 
-	// Sync Carbon
-	log.Printf("  Syncing Carbon from %s to %s", carbonSource, server.Path)
+	// Update Carbon
+	log.Printf("  Updating Carbon from %s to %s", carbonSource, server.Path)
 
 	// Remove old Carbon files first
 	carbonCleanupDirs := []string{
@@ -449,7 +447,7 @@ func syncServer(server config.Server) error {
 		return fmt.Errorf("carbon rsync failed: %w\nOutput: %s", err, output)
 	}
 
-	log.Printf("  ✓ Synced %s", server.Name)
+	log.Printf("  ✓ Updated %s", server.Name)
 	return nil
 }
 

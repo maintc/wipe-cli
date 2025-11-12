@@ -39,9 +39,9 @@ type CarbonRelease struct {
 // getCarbonPath returns the installation path for a branch
 func getCarbonPath(branch string) string {
 	if branch == "" || branch == "main" {
-		return CarbonBase
+		return filepath.Join(CarbonBase, "main")
 	}
-	return filepath.Join(CarbonBase + "-" + branch)
+	return filepath.Join(CarbonBase, branch)
 }
 
 // isCarbonInstalled checks if Carbon is installed

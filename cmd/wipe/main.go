@@ -23,7 +23,6 @@ var addCmd = &cobra.Command{
 	Short: "Add a Rust server to monitor",
 	Long:  `Add a Rust server with its calendar URL to the monitoring configuration.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		name, _ := cmd.Flags().GetString("name")
 		path, _ := cmd.Flags().GetString("path")
 		calendarURL, _ := cmd.Flags().GetString("calendar")
 		branch, _ := cmd.Flags().GetString("branch")
@@ -40,10 +39,8 @@ var addCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Use path as name if not provided
-		if name == "" {
-			name = path
-		}
+		// Derive name from path basename
+		name := filepath.Base(path)
 
 		// Default to main branch
 		if branch == "" {
@@ -97,37 +94,33 @@ var listCmd = &cobra.Command{
 }
 
 var removeCmd = &cobra.Command{
-	Use:   "remove [path]",
+	Use:   "remove [name or path]",
 	Short: "Remove a server from monitoring",
-	Long:  `Remove a Rust server from the monitoring configuration by its path.`,
+	Long:  `Remove a Rust server from the monitoring configuration by its name or path.`,
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		path := args[0]
+		identifier := args[0]
 
-		if err := config.RemoveServer(path); err != nil {
+		if err := config.RemoveServer(identifier); err != nil {
 			fmt.Fprintf(os.Stderr, "Error removing server: %v\n", err)
 			os.Exit(1)
 		}
 
-		fmt.Printf("✓ Removed server: %s\n", path)
+		fmt.Printf("✓ Removed server: %s\n", identifier)
 	},
 }
 
 var updateCmd = &cobra.Command{
-	Use:   "update [path]",
+	Use:   "update [name or path]",
 	Short: "Update a server's configuration",
-	Long:  `Update configuration settings for an existing server. Only provide flags for settings you want to change.`,
+	Long:  `Update configuration settings for an existing server by name or path. Only provide flags for settings you want to change.`,
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		path := args[0]
+		identifier := args[0]
 
 		updates := make(map[string]interface{})
 
 		// Check which flags were provided and add them to updates map
-		if cmd.Flags().Changed("name") {
-			name, _ := cmd.Flags().GetString("name")
-			updates["name"] = name
-		}
 		if cmd.Flags().Changed("calendar") {
 			calendarURL, _ := cmd.Flags().GetString("calendar")
 			updates["calendar_url"] = calendarURL
@@ -150,17 +143,15 @@ var updateCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		if err := config.UpdateServer(path, updates); err != nil {
+		if err := config.UpdateServer(identifier, updates); err != nil {
 			fmt.Fprintf(os.Stderr, "Error updating server: %v\n", err)
 			os.Exit(1)
 		}
 
-		fmt.Printf("✓ Updated server: %s\n", path)
+		fmt.Printf("✓ Updated server: %s\n", identifier)
 		fmt.Println("  Changes:")
 		for key := range updates {
 			switch key {
-			case "name":
-				fmt.Printf("    - name: %s\n", updates[key])
 			case "calendar_url":
 				fmt.Println("    - calendar URL updated")
 			case "branch":
@@ -367,14 +358,14 @@ Example:
 
 var syncCmd = &cobra.Command{
 	Use:   "sync [server-names...]",
-	Short: "Sync Rust and Carbon files to servers",
-	Long: `Syncs Rust and Carbon installations from /opt/rust and /opt/carbon to the specified servers.
+	Short: "Update Rust and Carbon on servers",
+	Long: `Updates Rust and Carbon installations from /opt/rust and /opt/carbon on the specified servers.
 
 This command:
   - Does NOT stop or start servers
   - Does NOT delete any files (no wipe)
   - Does NOT run the pre-start hook
-  - Only updates Rust and Carbon files via rsync
+  - Only updates Rust and Carbon files
 
 Example:
   wipe sync us-weekly eu-monthly
@@ -420,31 +411,31 @@ Example:
 
 		// Show warning and get confirmation (unless --force is used)
 		if !force {
-			fmt.Printf("⚠️  WARNING: You are about to sync Rust and Carbon files to %d server(s):\n\n", len(serversToSync))
+			fmt.Printf("⚠️  WARNING: You are about to update Rust and Carbon on %d server(s):\n\n", len(serversToSync))
 			for _, server := range serversToSync {
 				fmt.Printf("  • %s (%s, branch: %s)\n", server.Name, server.Path, server.Branch)
 			}
-			fmt.Println("\n⚠️  IMPORTANT: These servers should be STOPPED before syncing!")
-			fmt.Println("   Syncing files while servers are running may cause issues.")
+			fmt.Println("\n⚠️  IMPORTANT: These servers should be STOPPED before updating!")
+			fmt.Println("   Updating files while servers are running may cause issues.")
 			fmt.Print("\nDo you want to continue? (yes/no): ")
 
 			var response string
 			fmt.Scanln(&response)
 
 			if response != "yes" && response != "y" {
-				fmt.Println("❌ Sync cancelled")
+				fmt.Println("❌ Update cancelled")
 				os.Exit(0)
 			}
 		}
 
-		// Sync servers
-		fmt.Printf("\n🔄 Syncing %d server(s)...\n\n", len(serversToSync))
+		// Update servers
+		fmt.Printf("\n🔄 Updating %d server(s)...\n\n", len(serversToSync))
 		if err := executor.SyncServers(serversToSync); err != nil {
-			fmt.Fprintf(os.Stderr, "\n❌ Sync failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "\n❌ Update failed: %v\n", err)
 			os.Exit(1)
 		}
 
-		fmt.Println("\n✓ All servers synced successfully")
+		fmt.Println("\n✓ All servers updated successfully")
 	},
 }
 
@@ -454,6 +445,7 @@ var resetScriptsCmd = &cobra.Command{
 	Long: `Deletes and regenerates the management scripts in /opt/wipe-cli:
   - stop-servers.sh
   - start-servers.sh
+  - pre-start-hook.sh
   - generate-maps.sh
 
 WARNING: This will overwrite any customizations you've made to these scripts.`,
@@ -464,6 +456,7 @@ WARNING: This will overwrite any customizations you've made to these scripts.`,
 			fmt.Println("⚠️  WARNING: This will delete and regenerate the following scripts:")
 			fmt.Println("   - /opt/wipe-cli/stop-servers.sh")
 			fmt.Println("   - /opt/wipe-cli/start-servers.sh")
+			fmt.Println("   - /opt/wipe-cli/pre-start-hook.sh")
 			fmt.Println("   - /opt/wipe-cli/generate-maps.sh")
 			fmt.Println()
 			fmt.Println("Any customizations you've made will be LOST!")
@@ -483,10 +476,12 @@ WARNING: This will overwrite any customizations you've made to these scripts.`,
 
 		// Import executor package
 		executor := struct {
+			HookScriptPath         string
 			StopServersScriptPath  string
 			StartServersScriptPath string
 			GenerateMapsScriptPath string
 		}{
+			HookScriptPath:         "/opt/wipe-cli/pre-start-hook.sh",
 			StopServersScriptPath:  "/opt/wipe-cli/stop-servers.sh",
 			StartServersScriptPath: "/opt/wipe-cli/start-servers.sh",
 			GenerateMapsScriptPath: "/opt/wipe-cli/generate-maps.sh",
@@ -494,6 +489,7 @@ WARNING: This will overwrite any customizations you've made to these scripts.`,
 
 		scriptsRemoved := 0
 		scriptsToRemove := []string{
+			executor.HookScriptPath,
 			executor.StopServersScriptPath,
 			executor.StartServersScriptPath,
 			executor.GenerateMapsScriptPath,
@@ -532,7 +528,6 @@ func init() {
 	config.InitConfig()
 
 	// Add flags for add command
-	addCmd.Flags().StringP("name", "n", "", "Server name (defaults to path)")
 	addCmd.Flags().StringP("path", "p", "", "Full path to Rust server (required)")
 	addCmd.Flags().StringP("calendar", "c", "", "Google Calendar .ics URL (required)")
 	addCmd.Flags().StringP("branch", "b", "main", "Rust server branch (main, staging, etc.)")
@@ -547,7 +542,6 @@ func init() {
 	configSetCmd.Flags().String("discord-webhook", "", "Discord webhook URL for notifications (empty to disable)")
 
 	// Add flags for update command
-	updateCmd.Flags().StringP("name", "n", "", "Server name")
 	updateCmd.Flags().StringP("calendar", "c", "", "Google Calendar .ics URL")
 	updateCmd.Flags().StringP("branch", "b", "", "Rust server branch (main, staging, etc.)")
 	updateCmd.Flags().Bool("wipe-blueprints", false, "Delete blueprints on wipe events")

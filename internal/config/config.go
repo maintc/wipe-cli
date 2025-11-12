@@ -58,7 +58,7 @@ func InitConfig() {
 	viper.SetDefault("check_interval", 30)
 	viper.SetDefault("event_delay", 5)
 	viper.SetDefault("discord_webhook", "")
-	viper.SetDefault("map_generation_hours", 24)
+	viper.SetDefault("map_generation_hours", 22)
 	viper.SetDefault("servers", []Server{})
 
 	// Create config directory if it doesn't exist
@@ -134,17 +134,17 @@ func AddServer(name, path, calendarURL, branch string, wipeBlueprints, generateM
 }
 
 // RemoveServer removes a server from the configuration by path
-func RemoveServer(path string) error {
+func RemoveServer(identifier string) error {
 	cfg, err := GetConfig()
 	if err != nil {
 		return fmt.Errorf("failed to get config: %w", err)
 	}
 
-	// Find and remove server
+	// Find and remove server (match by name or path)
 	found := false
 	newServers := make([]Server, 0)
 	for _, s := range cfg.Servers {
-		if s.Path != path {
+		if s.Name != identifier && s.Path != identifier {
 			newServers = append(newServers, s)
 		} else {
 			found = true
@@ -152,7 +152,7 @@ func RemoveServer(path string) error {
 	}
 
 	if !found {
-		return fmt.Errorf("server with path %s not found", path)
+		return fmt.Errorf("server '%s' not found (try name or path)", identifier)
 	}
 
 	// Update viper
@@ -161,16 +161,16 @@ func RemoveServer(path string) error {
 }
 
 // UpdateServer updates an existing server's configuration
-func UpdateServer(path string, updates map[string]interface{}) error {
+func UpdateServer(identifier string, updates map[string]interface{}) error {
 	cfg, err := GetConfig()
 	if err != nil {
 		return fmt.Errorf("failed to get config: %w", err)
 	}
 
-	// Find the server
+	// Find the server (match by name or path)
 	found := false
 	for i, s := range cfg.Servers {
-		if s.Path == path {
+		if s.Name == identifier || s.Path == identifier {
 			found = true
 
 			// Apply updates
@@ -195,7 +195,7 @@ func UpdateServer(path string, updates map[string]interface{}) error {
 	}
 
 	if !found {
-		return fmt.Errorf("server with path %s not found", path)
+		return fmt.Errorf("server '%s' not found (try name or path)", identifier)
 	}
 
 	// Update viper
