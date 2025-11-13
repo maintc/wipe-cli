@@ -33,6 +33,10 @@ type Config struct {
 	EventDelay int `mapstructure:"event_delay"`
 	// Discord webhook URL for notifications
 	DiscordWebhook string `mapstructure:"discord_webhook"`
+	// Discord user IDs to mention in notifications
+	DiscordMentionUsers []string `mapstructure:"discord_mention_users"`
+	// Discord role IDs to mention in notifications
+	DiscordMentionRoles []string `mapstructure:"discord_mention_roles"`
 	// How many hours before a wipe to generate the map (default: 24)
 	MapGenerationHours int `mapstructure:"map_generation_hours"`
 	// Servers to monitor
@@ -58,6 +62,8 @@ func InitConfig() {
 	viper.SetDefault("check_interval", 30)
 	viper.SetDefault("event_delay", 5)
 	viper.SetDefault("discord_webhook", "")
+	viper.SetDefault("discord_mention_users", []string{})
+	viper.SetDefault("discord_mention_roles", []string{})
 	viper.SetDefault("map_generation_hours", 22)
 	viper.SetDefault("servers", []Server{})
 
@@ -251,5 +257,93 @@ func SetMapGenerationHours(hours int) error {
 		return fmt.Errorf("map generation hours must be at least 1 hour")
 	}
 	viper.Set("map_generation_hours", hours)
+	return SaveConfig()
+}
+
+// AddDiscordMentionUser adds a Discord user ID to the mention list
+func AddDiscordMentionUser(userID string) error {
+	cfg, err := GetConfig()
+	if err != nil {
+		return err
+	}
+
+	// Check if already exists
+	for _, id := range cfg.DiscordMentionUsers {
+		if id == userID {
+			return fmt.Errorf("user ID %s already in mention list", userID)
+		}
+	}
+
+	cfg.DiscordMentionUsers = append(cfg.DiscordMentionUsers, userID)
+	viper.Set("discord_mention_users", cfg.DiscordMentionUsers)
+	return SaveConfig()
+}
+
+// RemoveDiscordMentionUser removes a Discord user ID from the mention list
+func RemoveDiscordMentionUser(userID string) error {
+	cfg, err := GetConfig()
+	if err != nil {
+		return err
+	}
+
+	found := false
+	newList := []string{}
+	for _, id := range cfg.DiscordMentionUsers {
+		if id != userID {
+			newList = append(newList, id)
+		} else {
+			found = true
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("user ID %s not found in mention list", userID)
+	}
+
+	viper.Set("discord_mention_users", newList)
+	return SaveConfig()
+}
+
+// AddDiscordMentionRole adds a Discord role ID to the mention list
+func AddDiscordMentionRole(roleID string) error {
+	cfg, err := GetConfig()
+	if err != nil {
+		return err
+	}
+
+	// Check if already exists
+	for _, id := range cfg.DiscordMentionRoles {
+		if id == roleID {
+			return fmt.Errorf("role ID %s already in mention list", roleID)
+		}
+	}
+
+	cfg.DiscordMentionRoles = append(cfg.DiscordMentionRoles, roleID)
+	viper.Set("discord_mention_roles", cfg.DiscordMentionRoles)
+	return SaveConfig()
+}
+
+// RemoveDiscordMentionRole removes a Discord role ID from the mention list
+func RemoveDiscordMentionRole(roleID string) error {
+	cfg, err := GetConfig()
+	if err != nil {
+		return err
+	}
+
+	found := false
+	newList := []string{}
+	for _, id := range cfg.DiscordMentionRoles {
+		if id != roleID {
+			newList = append(newList, id)
+		} else {
+			found = true
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("role ID %s not found in mention list", roleID)
+	}
+
+	viper.Set("discord_mention_roles", newList)
 	return SaveConfig()
 }

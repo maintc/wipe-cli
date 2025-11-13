@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/maintc/wipe-cli/internal/config"
 )
 
 // Color constants for embed colors
@@ -71,6 +73,32 @@ func SendNotification(webhookURL, title, description string, color int) error {
 	}
 
 	hostname := GetHostname()
+
+	// Load config to get mention IDs
+	cfg, err := config.GetConfig()
+	if err == nil {
+		// Build mention string inline if mentions are configured
+		userIDs := cfg.DiscordMentionUsers
+		roleIDs := cfg.DiscordMentionRoles
+
+		if len(userIDs) > 0 || len(roleIDs) > 0 {
+			mentions := []string{}
+			for _, roleID := range roleIDs {
+				mentions = append(mentions, fmt.Sprintf("<@&%s>", roleID))
+			}
+			for _, userID := range userIDs {
+				mentions = append(mentions, fmt.Sprintf("<@%s>", userID))
+			}
+
+			if len(mentions) > 0 {
+				mentionStr := "cc " + mentions[0]
+				for i := 1; i < len(mentions); i++ {
+					mentionStr += " " + mentions[i]
+				}
+				description = mentionStr + "\n\n" + description
+			}
+		}
+	}
 
 	embed := Embed{
 		Title:       title,

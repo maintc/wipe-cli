@@ -190,6 +190,33 @@ wipe config set --map-generation-hours 22     # When to generate maps before wip
 wipe config set --discord-webhook "https://..." # General notifications webhook
 ```
 
+### 📢 Discord Mentions
+
+Configure user and role IDs to mention in Discord notifications:
+
+```bash
+# Add Discord users to mention (use Discord user IDs)
+wipe mention add-user 123456789012345678
+wipe mention add-user 987654321098765432
+
+# Add Discord roles to mention (use Discord role IDs)
+wipe mention add-role 111222333444555666
+wipe mention add-role 777888999000111222
+
+# Remove users or roles
+wipe mention remove-user 123456789012345678
+wipe mention remove-role 111222333444555666
+
+# View configured mentions
+wipe config
+```
+
+**How to get Discord IDs:**
+1. Enable Developer Mode in Discord (Settings → App Settings → Advanced → Developer Mode)
+2. Right-click on a user or role and select "Copy ID"
+
+Configured mentions will be included in batch event notifications (start, complete, errors) as `cc <@&ROLE_ID> <@USER_ID>`.
+
 ### 🛠️ Manual Operations
 
 ```bash
@@ -311,6 +338,16 @@ map_generation_hours: 22
 
 # Discord webhook URL for notifications
 discord_webhook: "https://discord.com/api/webhooks/..."
+
+# Discord user IDs to mention in notifications (optional)
+discord_mention_users:
+  - "123456789012345678"
+  - "987654321098765432"
+
+# Discord role IDs to mention in notifications (optional)
+discord_mention_roles:
+  - "111222333444555666"
+  - "777888999000111222"
 
 # Servers to monitor
 servers:

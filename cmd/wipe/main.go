@@ -186,6 +186,18 @@ var configCmd = &cobra.Command{
 		} else {
 			fmt.Printf("  Discord webhook: not configured\n")
 		}
+		fmt.Printf("  Discord mention users: %d configured\n", len(cfg.DiscordMentionUsers))
+		if len(cfg.DiscordMentionUsers) > 0 {
+			for _, userID := range cfg.DiscordMentionUsers {
+				fmt.Printf("    - %s\n", userID)
+			}
+		}
+		fmt.Printf("  Discord mention roles: %d configured\n", len(cfg.DiscordMentionRoles))
+		if len(cfg.DiscordMentionRoles) > 0 {
+			for _, roleID := range cfg.DiscordMentionRoles {
+				fmt.Printf("    - %s\n", roleID)
+			}
+		}
 		fmt.Printf("  Servers configured: %d\n", len(cfg.Servers))
 	},
 }
@@ -516,6 +528,78 @@ WARNING: This will overwrite any customizations you've made to these scripts.`,
 	},
 }
 
+var mentionCmd = &cobra.Command{
+	Use:   "mention",
+	Short: "Manage Discord mention lists",
+	Long:  `Add or remove Discord user and role IDs to mention in notifications.`,
+}
+
+var mentionAddUserCmd = &cobra.Command{
+	Use:   "add-user [user-id]",
+	Short: "Add a Discord user ID to mention in notifications",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		userID := args[0]
+
+		if err := config.AddDiscordMentionUser(userID); err != nil {
+			fmt.Fprintf(os.Stderr, "Error adding user: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("✓ Added Discord user ID: %s\n", userID)
+		fmt.Printf("  This user will be mentioned in Discord notifications as <@%s>\n", userID)
+	},
+}
+
+var mentionRemoveUserCmd = &cobra.Command{
+	Use:   "remove-user [user-id]",
+	Short: "Remove a Discord user ID from mentions",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		userID := args[0]
+
+		if err := config.RemoveDiscordMentionUser(userID); err != nil {
+			fmt.Fprintf(os.Stderr, "Error removing user: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("✓ Removed Discord user ID: %s\n", userID)
+	},
+}
+
+var mentionAddRoleCmd = &cobra.Command{
+	Use:   "add-role [role-id]",
+	Short: "Add a Discord role ID to mention in notifications",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		roleID := args[0]
+
+		if err := config.AddDiscordMentionRole(roleID); err != nil {
+			fmt.Fprintf(os.Stderr, "Error adding role: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("✓ Added Discord role ID: %s\n", roleID)
+		fmt.Printf("  This role will be mentioned in Discord notifications as <@&%s>\n", roleID)
+	},
+}
+
+var mentionRemoveRoleCmd = &cobra.Command{
+	Use:   "remove-role [role-id]",
+	Short: "Remove a Discord role ID from mentions",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		roleID := args[0]
+
+		if err := config.RemoveDiscordMentionRole(roleID); err != nil {
+			fmt.Fprintf(os.Stderr, "Error removing role: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("✓ Removed Discord role ID: %s\n", roleID)
+	},
+}
+
 func main() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -566,5 +650,10 @@ func init() {
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(resetScriptsCmd)
 	rootCmd.AddCommand(callScriptCmd)
+	rootCmd.AddCommand(mentionCmd)
 	configCmd.AddCommand(configSetCmd)
+	mentionCmd.AddCommand(mentionAddUserCmd)
+	mentionCmd.AddCommand(mentionRemoveUserCmd)
+	mentionCmd.AddCommand(mentionAddRoleCmd)
+	mentionCmd.AddCommand(mentionRemoveRoleCmd)
 }
