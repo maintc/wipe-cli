@@ -23,17 +23,17 @@ This project consists of two main components:
 1. **`wipe`** 🖥️ - CLI tool for managing server configurations
 2. **`wiped`** 🤖 - Long-running daemon that monitors calendars and schedules tasks
 
-The two components communicate via a shared configuration file stored at `~/.config/wipe/config.yaml`.
+The two components communicate via a shared configuration file stored at `~/.config/wiped/config.yaml`.
 
 ### ⚙️ Event Execution Flow
 
 When a restart or wipe event occurs:
 
-1. 🛑 **Stop servers** → Calls `/opt/wipe-cli/stop-servers.sh` with server paths
+1. 🛑 **Stop servers** → Calls `/opt/wiped/stop-servers.sh` with server paths
 2. 📦 **Update Rust & Carbon** → Syncs from `/opt/rust/{branch}` and `/opt/carbon/{branch}` (parallel)
 3. 🧹 **Wipe data** (wipes only) → Deletes map, save, and blueprint files (see below)
-4. 🔧 **Run hook** → Calls `/opt/wipe-cli/pre-start-hook.sh` with all server paths
-5. ▶️ **Start servers** → Calls `/opt/wipe-cli/start-servers.sh` with server paths
+4. 🔧 **Run hook** → Calls `/opt/wiped/pre-start-hook.sh` with all server paths
+5. ▶️ **Start servers** → Calls `/opt/wiped/start-servers.sh` with server paths
 
 All scripts receive server paths as arguments, allowing you to integrate with your existing infrastructure.
 
@@ -61,7 +61,7 @@ wipe-cli/
 │   ├── scheduler/     # Event scheduling and grouping
 │   └── steamcmd/      # Rust server installation via SteamCMD
 ├── systemd/
-│   └── wipe.service   # systemd service file
+│   └── wiped.service  # systemd service file
 ├── go.mod
 ├── Makefile
 └── README.md
@@ -89,15 +89,15 @@ This will:
 After installation, enable and start the service:
 
 ```bash
-sudo systemctl enable wipe@$USER.service
-sudo systemctl start wipe@$USER.service
+sudo systemctl enable wiped@$USER.service
+sudo systemctl start wiped@$USER.service
 ```
 
-**Note:** The service uses `wipe@{username}.service` format - replace `$USER` with your actual username if needed. The daemon runs as your user and accesses your `~/.config/wipe/config.yaml`.
+**Note:** The service uses `wiped@{username}.service` format - replace `$USER` with your actual username if needed. The daemon runs as your user and accesses your `~/.config/wiped/config.yaml`.
 
 ### 📜 Management Scripts
 
-The daemon automatically creates default management scripts in `/opt/wipe-cli/` on first run:
+The daemon automatically creates default management scripts in `/opt/wiped/` on first run:
 
 - 🛑 `stop-servers.sh` - Called to stop servers before restart/wipe
 - ▶️ `start-servers.sh` - Called to start servers after restart/wipe
@@ -109,7 +109,7 @@ The daemon automatically creates default management scripts in `/opt/wipe-cli/` 
 Example customization:
 
 ```bash
-# /opt/wipe-cli/stop-servers.sh
+# /opt/wiped/stop-servers.sh
 #!/bin/bash
 SERVER_PATHS="$@"
 for SERVER_PATH in $SERVER_PATHS; do
@@ -211,13 +211,13 @@ wipe reset-scripts --force  # Skip confirmation prompt
 
 ```bash
 # Check service status
-systemctl status wipe@$USER.service
+systemctl status wiped@$USER.service
 
 # View logs
-journalctl -u wipe@$USER.service -f
+journalctl -u wiped@$USER.service -f
 
 # Restart service
-sudo systemctl restart wipe@$USER.service
+sudo systemctl restart wiped@$USER.service
 ```
 
 ## 📜 Management Scripts
@@ -294,7 +294,7 @@ wipe sync us-weekly --force
 
 ## 📝 Configuration File
 
-Configuration is stored at `~/.config/wipe/config.yaml`:
+Configuration is stored at `~/.config/wiped/config.yaml`:
 
 ```yaml
 # How far ahead to look for events (in hours)
@@ -420,7 +420,7 @@ This will:
 - 🛑 Stop the service
 - ❌ Remove binaries from `/usr/local/bin/`
 - ❌ Remove systemd service file
-- ✅ Config files in `~/.config/wipe/` and scripts in `/opt/wipe-cli/` are preserved
+- ✅ Config files in `~/.config/wiped/` and scripts in `/opt/wiped/` are preserved
 
 ## 📦 Dependencies
 

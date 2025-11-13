@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	ConfigDir  = ".config/wipe"
+	ConfigDir  = ".config/wiped"
 	ConfigFile = "config.yaml"
 )
 

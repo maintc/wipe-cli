@@ -15,10 +15,10 @@ import (
 )
 
 const (
-	HookScriptPath         = "/opt/wipe-cli/pre-start-hook.sh"
-	StopServersScriptPath  = "/opt/wipe-cli/stop-servers.sh"
-	StartServersScriptPath = "/opt/wipe-cli/start-servers.sh"
-	GenerateMapsScriptPath = "/opt/wipe-cli/generate-maps.sh"
+	HookScriptPath         = "/opt/wiped/pre-start-hook.sh"
+	StopServersScriptPath  = "/opt/wiped/stop-servers.sh"
+	StartServersScriptPath = "/opt/wiped/start-servers.sh"
+	GenerateMapsScriptPath = "/opt/wiped/generate-maps.sh"
 )
 
 // EnsureHookScript creates the pre-start hook script if it doesn't exist

@@ -287,9 +287,9 @@ Example:
 
 		// Validate script name
 		validScripts := map[string]string{
-			"stop-servers":  "/opt/wipe-cli/stop-servers.sh",
-			"start-servers": "/opt/wipe-cli/start-servers.sh",
-			"generate-maps": "/opt/wipe-cli/generate-maps.sh",
+			"stop-servers":  "/opt/wiped/stop-servers.sh",
+			"start-servers": "/opt/wiped/start-servers.sh",
+			"generate-maps": "/opt/wiped/generate-maps.sh",
 		}
 
 		scriptPath, ok := validScripts[scriptName]
@@ -302,7 +302,7 @@ Example:
 		// Check if script exists
 		if _, err := os.Stat(scriptPath); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: Script not found at %s\n", scriptPath)
-			fmt.Fprintf(os.Stderr, "Restart the wipe service to generate scripts: sudo systemctl restart wipe@$USER.service\n")
+			fmt.Fprintf(os.Stderr, "Restart the wiped service to generate scripts: sudo systemctl restart wiped@$USER.service\n")
 			os.Exit(1)
 		}
 
@@ -442,7 +442,7 @@ Example:
 var resetScriptsCmd = &cobra.Command{
 	Use:   "reset-scripts",
 	Short: "Reset management scripts to defaults",
-	Long: `Deletes and regenerates the management scripts in /opt/wipe-cli:
+	Long: `Deletes and regenerates the management scripts in /opt/wiped:
   - stop-servers.sh
   - start-servers.sh
   - pre-start-hook.sh
@@ -454,10 +454,10 @@ WARNING: This will overwrite any customizations you've made to these scripts.`,
 
 		if !force {
 			fmt.Println("⚠️  WARNING: This will delete and regenerate the following scripts:")
-			fmt.Println("   - /opt/wipe-cli/stop-servers.sh")
-			fmt.Println("   - /opt/wipe-cli/start-servers.sh")
-			fmt.Println("   - /opt/wipe-cli/pre-start-hook.sh")
-			fmt.Println("   - /opt/wipe-cli/generate-maps.sh")
+			fmt.Println("   - /opt/wiped/stop-servers.sh")
+			fmt.Println("   - /opt/wiped/start-servers.sh")
+			fmt.Println("   - /opt/wiped/pre-start-hook.sh")
+			fmt.Println("   - /opt/wiped/generate-maps.sh")
 			fmt.Println()
 			fmt.Println("Any customizations you've made will be LOST!")
 			fmt.Println()
@@ -481,10 +481,10 @@ WARNING: This will overwrite any customizations you've made to these scripts.`,
 			StartServersScriptPath string
 			GenerateMapsScriptPath string
 		}{
-			HookScriptPath:         "/opt/wipe-cli/pre-start-hook.sh",
-			StopServersScriptPath:  "/opt/wipe-cli/stop-servers.sh",
-			StartServersScriptPath: "/opt/wipe-cli/start-servers.sh",
-			GenerateMapsScriptPath: "/opt/wipe-cli/generate-maps.sh",
+			HookScriptPath:         "/opt/wiped/pre-start-hook.sh",
+			StopServersScriptPath:  "/opt/wiped/stop-servers.sh",
+			StartServersScriptPath: "/opt/wiped/start-servers.sh",
+			GenerateMapsScriptPath: "/opt/wiped/generate-maps.sh",
 		}
 
 		scriptsRemoved := 0
@@ -508,8 +508,8 @@ WARNING: This will overwrite any customizations you've made to these scripts.`,
 
 		if scriptsRemoved > 0 {
 			fmt.Printf("\n✓ Removed %d script(s)\n", scriptsRemoved)
-			fmt.Println("\nTo regenerate the scripts, restart the wipe service:")
-			fmt.Println("  sudo systemctl restart wipe@$USER.service")
+			fmt.Println("\nTo regenerate the scripts, restart the wiped service:")
+			fmt.Println("  sudo systemctl restart wiped@$USER.service")
 		} else {
 			fmt.Println("ℹ️  No scripts found to remove")
 		}

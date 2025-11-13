@@ -60,24 +60,24 @@ install: check build
 	sudo install -m 755 $(BUILD_DIR)/$(CLI_BIN) $(BIN_DIR)/
 	sudo install -m 755 $(BUILD_DIR)/$(DAEMON_BIN) $(BIN_DIR)/
 	@echo "Installing systemd service..."
-	sudo install -m 644 systemd/wipe.service $(SYSTEMD_DIR)/wipe@.service
+	sudo install -m 644 systemd/wiped.service $(SYSTEMD_DIR)/wiped@.service
 	sudo systemctl daemon-reload
 	@echo "Installation complete!"
 	@echo ""
 	@echo "To enable and start the service for your user, run:"
-	@echo "  sudo systemctl enable wipe@$$USER.service"
-	@echo "  sudo systemctl start wipe@$$USER.service"
+	@echo "  sudo systemctl enable wiped@$$USER.service"
+	@echo "  sudo systemctl start wiped@$$USER.service"
 
 # Uninstall binaries and systemd service
 uninstall:
 	@echo "Stopping and disabling service..."
-	-sudo systemctl stop wipe@$$USER.service
-	-sudo systemctl disable wipe@$$USER.service
+	-sudo systemctl stop wiped@$$USER.service
+	-sudo systemctl disable wiped@$$USER.service
 	@echo "Removing binaries..."
 	sudo rm -f $(BIN_DIR)/$(CLI_BIN)
 	sudo rm -f $(BIN_DIR)/$(DAEMON_BIN)
 	@echo "Removing systemd service..."
-	sudo rm -f $(SYSTEMD_DIR)/wipe@.service
+	sudo rm -f $(SYSTEMD_DIR)/wiped@.service
 	sudo systemctl daemon-reload
 	@echo "Uninstall complete!"
 
