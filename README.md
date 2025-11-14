@@ -1,5 +1,11 @@
 # 🧹 Wipe CLI
 
+<a href="https://discord.gg/mainloot"><img src="https://mainloot.s3.us-west-2.amazonaws.com/Mainloot_Logo_OnBlack.png" alt="Mainloot Logo" style="width: 50%; height: auto;"></a>
+
+[![CI Status](https://github.com/maintc/wipe-cli/actions/workflows/build.yml/badge.svg)](https://github.com/maintc/wipe-cli/actions/workflows/build.yml)
+[![Go Coverage](https://github.com/maintc/wipe-cli/wiki/coverage.svg)](https://raw.githack.com/wiki/maintc/wipe-cli/coverage.html)
+[![GitHub Release](https://img.shields.io/github/v/release/maintc/wipe-cli)](https://github.com/maintc/wipe-cli/releases/latest)
+
 **Automated Rust game server management powered by Google Calendar schedules.**
 
 ## 📖 What It Does
