@@ -48,7 +48,7 @@ jobs:
           coverage-file: coverage/coverage.txt
           report: true
           chart: true
-          amend: true
+          amend: false
 
       - name: Install gocov and gocov-xml
         run: |
