@@ -13,6 +13,8 @@
 
 > **⚠️ Note**: This tool is designed for Linux servers only. Windows is not supported.
 
+> **💡 Tip**: Pairs well with [WipeCal](https://github.com/maintc/WipeCal) - a Carbon plugin that uses the same calendar URL to notify players of approaching restarts/wipes and display upcoming events in-game.
+
 Server owners can schedule restart and wipe events in Google Calendar. This tool:
 
 - 📅 **Monitors multiple Google Calendar iCal feeds** (one per server)
