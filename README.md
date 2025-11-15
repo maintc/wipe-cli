@@ -5,10 +5,13 @@
 [![CI Status](https://github.com/maintc/wipe-cli/actions/workflows/build.yml/badge.svg)](https://github.com/maintc/wipe-cli/actions/workflows/build.yml)
 [![Go Coverage](https://github.com/maintc/wipe-cli/wiki/coverage.svg)](https://raw.githack.com/wiki/maintc/wipe-cli/coverage.html)
 [![GitHub Release](https://img.shields.io/github/v/release/maintc/wipe-cli)](https://github.com/maintc/wipe-cli/releases/latest)
+[![Platform](https://img.shields.io/badge/platform-linux-blue)](https://github.com/maintc/wipe-cli)
 
 **Automated Rust game server management powered by Google Calendar schedules.**
 
 ## 📖 What It Does
+
+> **⚠️ Note**: This tool is designed for Linux servers only. Windows is not supported.
 
 Server owners can schedule restart and wipe events in Google Calendar. This tool:
 

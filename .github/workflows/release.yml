@@ -14,12 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # Build and publish in parallel: linux/386, linux/amd64, linux/arm64, windows/386, windows/amd64, darwin/amd64, darwin/arm64
-        goos: [linux, windows, darwin]
+        # Build and publish in parallel: linux/amd64, linux/arm64, darwin/amd64, darwin/arm64
+        goos: [linux, darwin]
         goarch: [amd64, arm64]
-        exclude:
-          - goarch: arm64
-            goos: windows
     env:
       CI: true
     steps:
@@ -36,19 +33,11 @@ jobs:
       - name: Build CLI binary
         run: |
           mkdir -p dist
-          output_name="wipe"
-          if [[ "${{ matrix.goos }}" == "windows" ]]; then
-            output_name="${output_name}.exe"
-          fi
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o dist/${output_name} ./cmd/wipe
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o dist/wipe ./cmd/wipe
 
       - name: Build daemon binary
         run: |
-          output_name="wiped"
-          if [[ "${{ matrix.goos }}" == "windows" ]]; then
-            output_name="${output_name}.exe"
-          fi
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o dist/${output_name} ./cmd/wiped
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o dist/wiped ./cmd/wiped
 
       - name: Package binaries
         run: |
