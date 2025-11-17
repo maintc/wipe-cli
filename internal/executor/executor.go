@@ -14,7 +14,7 @@ import (
 	"github.com/maintc/wipe-cli/internal/discord"
 )
 
-const (
+var (
 	HookScriptPath         = "/opt/wiped/pre-start-hook.sh"
 	StopServersScriptPath  = "/opt/wiped/stop-servers.sh"
 	StartServersScriptPath = "/opt/wiped/start-servers.sh"

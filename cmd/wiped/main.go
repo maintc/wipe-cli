@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -13,7 +14,17 @@ import (
 )
 
 func main() {
+	// Parse command-line flags
+	configPath := flag.String("config", "", "Path to config file (default: ~/.config/wiped/config.yaml)")
+	flag.Parse()
+
 	log.Println("Starting wipe daemon...")
+
+	// Set custom config path if provided
+	if *configPath != "" {
+		config.CustomConfigPath = *configPath
+		log.Printf("Using custom config: %s", *configPath)
+	}
 
 	// Initialize config
 	config.InitConfig()

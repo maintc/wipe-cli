@@ -47,7 +47,24 @@ func (d *Daemon) Run(ctx context.Context) error {
 		return err
 	}
 	d.config = cfg
-	d.scheduler = scheduler.New(cfg.LookaheadHours, cfg.DiscordWebhook, cfg.EventDelay)
+
+	// Create scheduler
+	sched, err := scheduler.New(cfg.LookaheadHours, cfg.DiscordWebhook, cfg.EventDelay)
+	if err != nil {
+		log.Printf("Error creating scheduler: %v", err)
+		return err
+	}
+	d.scheduler = sched
+
+	// Ensure scheduler is shut down on exit
+	defer func() {
+		if d.scheduler != nil {
+			log.Println("Shutting down scheduler...")
+			if err := d.scheduler.Shutdown(); err != nil {
+				log.Printf("Error shutting down scheduler: %v", err)
+			}
+		}
+	}()
 
 	// Create pre-start hook script
 	if err := executor.EnsureHookScript(); err != nil {
@@ -74,10 +91,6 @@ func (d *Daemon) Run(ctx context.Context) error {
 		log.Printf("No servers configured")
 	}
 
-	// Ticker for checking due events (every 10 seconds for responsive execution)
-	checkTicker := time.NewTicker(10 * time.Second)
-	defer checkTicker.Stop()
-
 	// Ticker for reloading config (every 10 seconds)
 	configTicker := time.NewTicker(10 * time.Second)
 	defer configTicker.Stop()
@@ -90,12 +103,6 @@ func (d *Daemon) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-
-		case <-checkTicker.C:
-			// Check for events that are due
-			if d.scheduler != nil {
-				d.scheduler.ProcessDueEvents()
-			}
 
 		case <-updateCheckTicker.C:
 			// Check for Rust updates
@@ -188,7 +195,12 @@ func (d *Daemon) updateCalendars() {
 	log.Printf("Updating calendars for %d server(s)...", len(d.config.Servers))
 
 	if d.scheduler == nil {
-		d.scheduler = scheduler.New(d.config.LookaheadHours, d.config.DiscordWebhook, d.config.EventDelay)
+		sched, err := scheduler.New(d.config.LookaheadHours, d.config.DiscordWebhook, d.config.EventDelay)
+		if err != nil {
+			log.Printf("Error creating scheduler: %v", err)
+			return
+		}
+		d.scheduler = sched
 	}
 
 	// Update scheduler even if no servers (clears all events)

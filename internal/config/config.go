@@ -13,6 +13,12 @@ const (
 	ConfigFile = "config.yaml"
 )
 
+var (
+	// CustomConfigPath allows overriding the default config path
+	// Useful for testing or alternative deployments
+	CustomConfigPath string
+)
+
 // Server represents a Rust server to monitor
 type Server struct {
 	Name           string `mapstructure:"name" yaml:"name"`
@@ -45,17 +51,26 @@ type Config struct {
 
 // InitConfig initializes the configuration system
 func InitConfig() {
-	// Set config file location
-	home, err := os.UserHomeDir()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting home directory: %v\n", err)
-		return
-	}
+	var configPath string
 
-	configPath := filepath.Join(home, ConfigDir)
-	viper.AddConfigPath(configPath)
-	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
+	// Use custom config path if set, otherwise use default
+	if CustomConfigPath != "" {
+		// Custom path provided - use it directly
+		viper.SetConfigFile(CustomConfigPath)
+		configPath = filepath.Dir(CustomConfigPath)
+	} else {
+		// Default path
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting home directory: %v\n", err)
+			return
+		}
+
+		configPath = filepath.Join(home, ConfigDir)
+		viper.AddConfigPath(configPath)
+		viper.SetConfigName("config")
+		viper.SetConfigType("yaml")
+	}
 
 	// Set defaults
 	viper.SetDefault("lookahead_hours", 24)

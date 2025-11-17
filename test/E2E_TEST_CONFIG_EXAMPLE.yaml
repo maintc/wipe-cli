@@ -1,0 +1,63 @@
+# Example E2E Test Configuration
+# This is what the test generates in /tmp/wipe-cli-e2e-XXXXXXXXX/config.yaml
+
+check_interval: 10              # Check calendar every 10 seconds (fast for testing)
+discord_webhook: ""             # Set via E2E_DISCORD_WEBHOOK environment variable
+event_delay: 5                  # 5 second delay before execution
+lookahead_hours: 1              # Only look 1 hour ahead (vs 24h default)
+map_generation_hours: 1         # Generate maps 1 hour before wipe
+servers:
+  - branch: main
+    calendar_url: http://127.0.0.1:XXXXX/us-weekly/basic.ics  # Per-server calendar
+    name: us-weekly
+    path: /var/www/servers/us-weekly
+    wipe_blueprints: false
+    generate_map: true    # Won't run for restart events
+  - branch: main
+    calendar_url: http://127.0.0.1:XXXXX/us-long/basic.ics
+    name: us-long
+    path: /var/www/servers/us-long
+    wipe_blueprints: false
+    generate_map: true    # Won't run for restart events
+  - branch: main
+    calendar_url: http://127.0.0.1:XXXXX/us-build/basic.ics
+    name: us-build
+    path: /var/www/servers/us-build
+    wipe_blueprints: false
+    generate_map: false
+  - branch: main
+    calendar_url: http://127.0.0.1:XXXXX/train/basic.ics
+    name: train
+    path: /var/www/servers/train
+    wipe_blueprints: false
+    generate_map: false
+
+# Test Events (scheduled programmatically to each server's calendar):
+# CURRENT EVENTS (T+90s) - will execute:
+# - us-weekly: "restart" event
+# - us-long:   "restart" event
+# - us-build:  "wipe" event
+# - train:     "wipe" event
+#
+# FUTURE EVENTS (T+30m) - within lookahead, won't execute:
+# - us-weekly: "restart" event (future) - restart to avoid map gen
+# - us-long:   "restart" event (future) - restart to avoid map gen
+# - us-build:  "wipe" event (future)
+# - train:     "wipe" event (future)
+#
+# This tests the Nov 16 scenario where future events in the lookahead
+# should NOT be affected by current event execution/removal
+#
+# Current events batch execution:
+# - All 4 servers stop together
+# - All 4 servers update Rust/Carbon in parallel
+# - Only us-build and train get wiped (blueprints preserved)
+# - Map generation skipped: us-weekly/us-long (restart), us-build/train (disabled)
+# - All 4 servers run pre-start hook together
+# - All 4 servers start together
+#
+# After execution:
+# - Current events removed from calendar
+# - Future events remain scheduled
+# - No race condition with calendar refresh
+

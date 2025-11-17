@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-co-op/gocron/v2"
+	"github.com/google/uuid"
 	"github.com/maintc/wipe-cli/internal/calendar"
 	"github.com/maintc/wipe-cli/internal/config"
 	"github.com/maintc/wipe-cli/internal/discord"
@@ -21,25 +23,46 @@ type ScheduledEvent struct {
 	Scheduled time.Time
 }
 
-// Scheduler manages scheduled events
+// Scheduler manages scheduled events using gocron
 type Scheduler struct {
+	gocron         gocron.Scheduler
 	events         []ScheduledEvent
 	lookaheadHours int
 	webhookURL     string
 	eventDelay     int
-	executedEvents map[string]bool // Track executed events to prevent duplicates
+	scheduledJobs  map[string]uuid.UUID        // Track gocron job IDs by time key
+	jobEvents      map[string][]ScheduledEvent // Mutable event list per job (updated on calendar refresh)
+	executingJobs  map[string]bool             // Track which jobs are currently executing (by timeKey)
 	mutex          sync.Mutex
 }
 
 // New creates a new Scheduler
-func New(lookaheadHours int, webhookURL string, eventDelay int) *Scheduler {
-	return &Scheduler{
+func New(lookaheadHours int, webhookURL string, eventDelay int) (*Scheduler, error) {
+	gocronScheduler, err := gocron.NewScheduler()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create gocron scheduler: %w", err)
+	}
+
+	s := &Scheduler{
+		gocron:         gocronScheduler,
 		events:         make([]ScheduledEvent, 0),
 		lookaheadHours: lookaheadHours,
 		webhookURL:     webhookURL,
 		eventDelay:     eventDelay,
-		executedEvents: make(map[string]bool),
+		scheduledJobs:  make(map[string]uuid.UUID),
+		jobEvents:      make(map[string][]ScheduledEvent),
+		executingJobs:  make(map[string]bool),
 	}
+
+	// Start the gocron scheduler
+	s.gocron.Start()
+
+	return s, nil
+}
+
+// Shutdown gracefully shuts down the scheduler
+func (s *Scheduler) Shutdown() error {
+	return s.gocron.Shutdown()
 }
 
 // GetEvents returns a copy of the current events (thread-safe)
@@ -55,6 +78,9 @@ func (s *Scheduler) GetEvents() []ScheduledEvent {
 
 // UpdateEvents fetches calendars and updates the schedule
 func (s *Scheduler) UpdateEvents(servers []config.Server) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
 	log.Println("Updating calendar events...")
 
 	var allEvents []ScheduledEvent
@@ -93,10 +119,16 @@ func (s *Scheduler) UpdateEvents(servers []config.Server) error {
 		return allEvents[i].Scheduled.Before(allEvents[j].Scheduled)
 	})
 
-	// Detect changes before updating
-	s.detectEventChanges(allEvents)
+	// Detect changes
+	oldEvents := s.events
+	s.detectEventChanges(oldEvents, allEvents)
 
 	s.events = allEvents
+
+	// Group events by time (truncated to minute) and schedule gocron jobs
+	if err := s.scheduleJobs(); err != nil {
+		return fmt.Errorf("failed to schedule jobs: %w", err)
+	}
 
 	log.Printf("Total scheduled events: %d", len(s.events))
 	s.logUpcomingEvents()
@@ -156,12 +188,12 @@ func (s *Scheduler) resolveConflicts(events []ScheduledEvent) []ScheduledEvent {
 }
 
 // detectEventChanges compares old and new events and sends Discord notifications for changes
-func (s *Scheduler) detectEventChanges(newEvents []ScheduledEvent) {
+func (s *Scheduler) detectEventChanges(oldEvents, newEvents []ScheduledEvent) {
 	// Build maps for comparison using a unique key for each event
 	oldEventMap := make(map[string]ScheduledEvent)
 	newEventMap := make(map[string]ScheduledEvent)
 
-	for _, event := range s.events {
+	for _, event := range oldEvents {
 		key := fmt.Sprintf("%s|%s|%s", event.Server.Path, event.Event.Type, event.Scheduled.Format(time.RFC3339))
 		oldEventMap[key] = event
 	}
@@ -306,44 +338,131 @@ func (s *Scheduler) logUpcomingEvents() {
 	}
 }
 
-// ProcessDueEvents checks for events that should execute now
-func (s *Scheduler) ProcessDueEvents() {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
-	now := time.Now()
-
-	// Group events by time (within 1 minute)
+// scheduleJobs groups events by time and creates gocron jobs for each time-group
+func (s *Scheduler) scheduleJobs() error {
+	// Group events by time (truncated to minute)
 	eventGroups := make(map[string][]ScheduledEvent)
+	timeKeys := make(map[string]time.Time)
 
 	for _, event := range s.events {
-		// Check if event is due (scheduled time has passed)
-		if event.Scheduled.Before(now) || event.Scheduled.Equal(now) {
-			timeKey := event.Scheduled.Truncate(time.Minute).Format(time.RFC3339)
-
-			// Check if already executed
-			eventKey := fmt.Sprintf("%s-%s-%s", timeKey, event.Server.Path, event.Event.Type)
-			if s.executedEvents[eventKey] {
-				continue
-			}
-
-			eventGroups[timeKey] = append(eventGroups[timeKey], event)
+		timeKey := event.Scheduled.Truncate(time.Minute).Format(time.RFC3339)
+		eventGroups[timeKey] = append(eventGroups[timeKey], event)
+		if _, exists := timeKeys[timeKey]; !exists {
+			timeKeys[timeKey] = event.Scheduled.Truncate(time.Minute)
 		}
 	}
 
-	// Execute each group
-	for timeKey, group := range eventGroups {
-		// Group is a collection of events happening at the same time
-		// Further group by event type since we want to execute all events of same type together
-		s.executeEventGroup(timeKey, group)
+	// Build set of current time keys
+	currentTimeKeys := make(map[string]bool)
+	for timeKey := range eventGroups {
+		currentTimeKeys[timeKey] = true
 	}
+
+	// Update event lists for existing jobs AND schedule new jobs
+	for timeKey, events := range eventGroups {
+		scheduleTime := timeKeys[timeKey]
+
+		// Skip events in the past
+		if scheduleTime.Before(time.Now()) {
+			log.Printf("Skipping past event at %s", timeKey)
+			continue
+		}
+
+		// Make a copy of events for this time group
+		eventsCopy := make([]ScheduledEvent, len(events))
+		copy(eventsCopy, events)
+
+		// Check if job already scheduled
+		if _, exists := s.scheduledJobs[timeKey]; exists {
+			// Job exists - UPDATE the event list (allows add/remove of individual servers)
+			s.jobEvents[timeKey] = eventsCopy
+			log.Printf("Updated event list for %s (%d server(s))",
+				scheduleTime.Format("Mon Jan 02 15:04 MST"), len(events))
+			continue
+		}
+
+		// Job doesn't exist - CREATE new job
+		// Store the event list
+		s.jobEvents[timeKey] = eventsCopy
+
+		// Schedule one job for this time-group
+		// Pass timeKey so we can look up current events at execution time
+		tk := timeKey // Capture for closure
+		job, err := s.gocron.NewJob(
+			gocron.OneTimeJob(
+				gocron.OneTimeJobStartDateTime(scheduleTime),
+			),
+			gocron.NewTask(
+				func() {
+					// Look up CURRENT events at execution time
+					s.mutex.Lock()
+					currentEvents, exists := s.jobEvents[tk]
+					s.mutex.Unlock()
+
+					if !exists || len(currentEvents) == 0 {
+						log.Printf("No events found for %s at execution time, skipping", tk)
+						return
+					}
+
+					s.executeEventGroup(currentEvents)
+				},
+			),
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		)
+
+		if err != nil {
+			return fmt.Errorf("failed to schedule job for %s: %w", timeKey, err)
+		}
+
+		s.scheduledJobs[timeKey] = job.ID()
+		log.Printf("Scheduled job for %s (%d server(s))",
+			scheduleTime.Format("Mon Jan 02 15:04 MST"), len(events))
+	}
+
+	// Cancel jobs that are no longer needed (timeKey completely gone)
+	for timeKey, jobID := range s.scheduledJobs {
+		if !currentTimeKeys[timeKey] {
+			// Check if this job is currently executing
+			// Never cancel a job that's in progress
+			if s.executingJobs[timeKey] {
+				log.Printf("Keeping job for %s (currently executing)", timeKey)
+				continue
+			}
+
+			if err := s.gocron.RemoveJob(jobID); err != nil {
+				log.Printf("Warning: failed to remove job for %s: %v", timeKey, err)
+			}
+			delete(s.scheduledJobs, timeKey)
+			delete(s.jobEvents, timeKey)
+			log.Printf("Cancelled job for time: %s", timeKey)
+		}
+	}
+
+	return nil
 }
 
 // executeEventGroup executes a group of events that occur at the same time
-func (s *Scheduler) executeEventGroup(timeKey string, events []ScheduledEvent) {
+func (s *Scheduler) executeEventGroup(events []ScheduledEvent) {
 	if len(events) == 0 {
 		return
 	}
+
+	// Calculate timeKey for this execution
+	// Truncate to minute precision to match scheduling logic
+	eventTime := events[0].Scheduled.Truncate(time.Minute)
+	timeKey := eventTime.Format(time.RFC3339)
+
+	// Mark this job as executing
+	s.mutex.Lock()
+	s.executingJobs[timeKey] = true
+	s.mutex.Unlock()
+
+	// Ensure we remove the executing mark when done
+	defer func() {
+		s.mutex.Lock()
+		delete(s.executingJobs, timeKey)
+		s.mutex.Unlock()
+	}()
 
 	// Process all events together (restarts and wipes in single batch)
 	// Extract all servers
@@ -355,12 +474,6 @@ func (s *Scheduler) executeEventGroup(timeKey string, events []ScheduledEvent) {
 		if event.Event.Type == calendar.EventTypeWipe {
 			wipeServers[event.Server.Path] = true
 		}
-	}
-
-	// Mark as executed before running (to prevent duplicates)
-	for _, event := range events {
-		eventKey := fmt.Sprintf("%s-%s-%s", timeKey, event.Server.Path, event.Event.Type)
-		s.executedEvents[eventKey] = true
 	}
 
 	// Execute all servers together, passing which ones need wipes

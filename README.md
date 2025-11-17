@@ -256,6 +256,9 @@ journalctl -u wiped@$USER.service -f
 
 # Restart service
 sudo systemctl restart wiped@$USER.service
+
+# Run daemon with custom config path (for testing)
+wiped -config /path/to/custom/config.yaml
 ```
 
 ## 📜 Management Scripts
@@ -476,6 +479,7 @@ This will:
 - ⚙️ [viper](https://github.com/spf13/viper) - Configuration management
 - 📅 [golang-ical](https://github.com/arran4/golang-ical) - iCalendar parsing
 - 🔄 [rrule-go](https://github.com/teambition/rrule-go) - Recurring event support
+- ⏰ [gocron](https://github.com/go-co-op/gocron) - Job scheduling and execution
 
 ## 📄 License
 
