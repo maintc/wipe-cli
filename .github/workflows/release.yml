@@ -33,11 +33,23 @@ jobs:
       - name: Build CLI binary
         run: |
           mkdir -p dist
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o dist/wipe ./cmd/wipe
+          VERSION=${{ github.event.release.tag_name }}
+          COMMIT=$(git rev-parse --short HEAD)
+          BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          LDFLAGS="-X github.com/maintc/wipe-cli/internal/version.Version=${VERSION} \
+                   -X github.com/maintc/wipe-cli/internal/version.GitCommit=${COMMIT} \
+                   -X github.com/maintc/wipe-cli/internal/version.BuildDate=${BUILD_DATE}"
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -ldflags "${LDFLAGS}" -o dist/wipe ./cmd/wipe
 
       - name: Build daemon binary
         run: |
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o dist/wiped ./cmd/wiped
+          VERSION=${{ github.event.release.tag_name }}
+          COMMIT=$(git rev-parse --short HEAD)
+          BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          LDFLAGS="-X github.com/maintc/wipe-cli/internal/version.Version=${VERSION} \
+                   -X github.com/maintc/wipe-cli/internal/version.GitCommit=${COMMIT} \
+                   -X github.com/maintc/wipe-cli/internal/version.BuildDate=${BUILD_DATE}"
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -ldflags "${LDFLAGS}" -o dist/wiped ./cmd/wiped
 
       - name: Package binaries
         run: |

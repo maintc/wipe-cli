@@ -141,10 +141,10 @@ func TestE2E_FullIntegration(t *testing.T) {
 	time.Sleep(20 * time.Second)
 
 	// Wait for batch event to execute (restart + wipe together)
-	// 90s until event + 30s for execution to complete = 120s total, minus 25s already waited
+	// 60s until event + 30s for execution to complete = 90s total, minus 25s already waited = 65s
 	t.Log("Waiting for batch event to execute (2 restart, 2 wipe)...")
-	t.Log("Events scheduled for ~90s from start, waiting...")
-	time.Sleep(95 * time.Second)
+	t.Log("Events scheduled for ~60s from start, waiting...")
+	time.Sleep(65 * time.Second)
 
 	// Verify all servers were updated
 	t.Log("Verifying all servers were updated...")
@@ -160,7 +160,7 @@ func TestE2E_FullIntegration(t *testing.T) {
 
 	// Wait a bit longer for Ansible to complete in background
 	t.Log("Waiting for Ansible to complete...")
-	time.Sleep(30 * time.Second)
+	time.Sleep(60 * time.Second)
 
 	// Stop daemon
 	t.Log("Stopping daemon...")
@@ -304,8 +304,8 @@ func createTestConfig(t *testing.T, testDir string, servers []config.Server, dis
 
 // scheduleTestEvents adds test events to the calendar
 func scheduleTestEvents(t *testing.T, cs *CalendarServer, servers []config.Server) {
-	// Schedule CURRENT events 90 seconds from now (all in same batch)
-	currentEventTime := time.Now().Add(90 * time.Second)
+	// Schedule CURRENT events 60 seconds from now (all in same batch)
+	currentEventTime := time.Now().Add(60 * time.Second)
 
 	// Restart events for us-weekly and us-long (just "restart" as summary)
 	cs.AddEventForServer("us-weekly", "restart-1", "restart", currentEventTime)
@@ -315,18 +315,20 @@ func scheduleTestEvents(t *testing.T, cs *CalendarServer, servers []config.Serve
 	cs.AddEventForServer("us-build", "wipe-1", "wipe", currentEventTime)
 	cs.AddEventForServer("train", "wipe-1", "wipe", currentEventTime)
 
-	// Schedule FUTURE events (30 minutes from now - within lookahead but won't execute)
-	// This simulates tomorrow's events being in the lookahead during today's execution
+	// Schedule FUTURE events (61 minutes from now - just outside lookahead initially)
+	// At T+0s: lookahead is 0-60m, so events at 61m are NOT visible
+	// At T+60s: lookahead is 1m-61m, so events at 61m ARE visible (edge case test)
+	// This simulates events appearing in lookahead RIGHT when current events execute
 	// Note: us-weekly and us-long get RESTART events to avoid triggering map generation
-	futureEventTime := time.Now().Add(30 * time.Minute)
+	futureEventTime := time.Now().Add(61 * time.Minute)
 
 	cs.AddEventForServer("us-weekly", "restart-future", "restart", futureEventTime)
 	cs.AddEventForServer("us-long", "restart-future", "restart", futureEventTime)
 	cs.AddEventForServer("us-build", "wipe-future", "wipe", futureEventTime)
 	cs.AddEventForServer("train", "wipe-future", "wipe", futureEventTime)
 
-	t.Logf("Current events scheduled: 2 restart(s), 2 wipe(s) at T+90s")
-	t.Logf("Future events scheduled: 2 restart(s), 2 wipe(s) at T+30m (within lookahead)")
+	t.Logf("Current events scheduled: 2 restart(s), 2 wipe(s) at T+60s")
+	t.Logf("Future events scheduled: 2 restart(s), 2 wipe(s) at T+61m (outside initial lookahead, appear when current events execute)")
 }
 
 // verifyServersUpdated checks that servers were updated (Rust/Carbon synced)

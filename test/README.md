@@ -68,19 +68,19 @@ T+0s:    Test starts, creates temporary config
          Starts daemon with test config
 
 T+10s:   Daemon fetches calendar
-         Test adds events (all at T+90s):
+         Test adds events (all at T+60s):
          - RESTART: us-weekly, us-long
          - WIPE: us-build, train
-         - Future events (T+30m) to test lookahead
+         - Future events (T+61m) outside lookahead, appear at execution time
 
-T+90s:   BATCH EVENT FIRES (2 restart + 2 wipe together)
+T+60s:   BATCH EVENT FIRES (2 restart + 2 wipe together)
          ✓ Stops all 4 servers
          ✓ Syncs Rust & Carbon (parallel)
          ✓ Wipes files for us-build & train
          ✓ Runs pre-start-hook with all 4 servers
          ✓ Starts all 4 servers
 
-T+120s:  Test verifies:
+T+90s:   Test verifies:
          ✓ All servers updated (RustDedicated binary present)
          ✓ Wipe files deleted (*.map, *.sav*, *.db*)
          ✓ Future events still scheduled (prevents Nov 16 scenario)
@@ -91,7 +91,7 @@ T+120s:  Test verifies:
 ### Expected Duration
 
 - **First run**: ~10-15 minutes (Rust download ~8GB)
-- **Subsequent runs**: ~2-3 minutes (cached installations)
+- **Subsequent runs**: ~90 seconds (cached installations)
 
 ---
 

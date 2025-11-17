@@ -9,13 +9,15 @@ import (
 
 	"github.com/maintc/wipe-cli/internal/config"
 	"github.com/maintc/wipe-cli/internal/executor"
+	"github.com/maintc/wipe-cli/internal/version"
 	"github.com/spf13/cobra"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "wipe",
-	Short: "Wipe CLI - Configure the wipe monitoring service",
-	Long:  `A CLI tool to configure Rust server calendars for the wipe daemon to monitor.`,
+	Use:     "wipe",
+	Short:   "Wipe CLI - Configure the wipe monitoring service",
+	Long:    `A CLI tool to configure Rust server calendars for the wipe daemon to monitor.`,
+	Version: version.GetVersion(),
 }
 
 var addCmd = &cobra.Command{

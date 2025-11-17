@@ -11,14 +11,22 @@ import (
 
 	"github.com/maintc/wipe-cli/internal/config"
 	"github.com/maintc/wipe-cli/internal/daemon"
+	"github.com/maintc/wipe-cli/internal/version"
 )
 
 func main() {
 	// Parse command-line flags
 	configPath := flag.String("config", "", "Path to config file (default: ~/.config/wiped/config.yaml)")
+	showVersion := flag.Bool("version", false, "Show version information")
 	flag.Parse()
 
-	log.Println("Starting wipe daemon...")
+	// Show version if requested
+	if *showVersion {
+		fmt.Println(version.GetFullVersion())
+		os.Exit(0)
+	}
+
+	log.Printf("Starting wipe daemon (%s)...", version.GetVersion())
 
 	// Set custom config path if provided
 	if *configPath != "" {

@@ -33,20 +33,20 @@ servers:
     generate_map: false
 
 # Test Events (scheduled programmatically to each server's calendar):
-# CURRENT EVENTS (T+90s) - will execute:
+# CURRENT EVENTS (T+60s) - will execute:
 # - us-weekly: "restart" event
 # - us-long:   "restart" event
 # - us-build:  "wipe" event
 # - train:     "wipe" event
 #
-# FUTURE EVENTS (T+30m) - within lookahead, won't execute:
+# FUTURE EVENTS (T+61m) - outside initial lookahead, appear at execution time:
 # - us-weekly: "restart" event (future) - restart to avoid map gen
 # - us-long:   "restart" event (future) - restart to avoid map gen
 # - us-build:  "wipe" event (future)
 # - train:     "wipe" event (future)
 #
-# This tests the Nov 16 scenario where future events in the lookahead
-# should NOT be affected by current event execution/removal
+# This tests the edge case where future events appear in lookahead
+# RIGHT when current events execute, ensuring they aren't affected by the execution
 #
 # Current events batch execution:
 # - All 4 servers stop together

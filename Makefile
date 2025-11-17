@@ -9,12 +9,20 @@ SYSTEMD_DIR := /etc/systemd/system
 CLI_BIN := wipe
 DAEMON_BIN := wiped
 
+# Version info (from git)
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+LDFLAGS := -X github.com/maintc/wipe-cli/internal/version.Version=$(VERSION) \
+           -X github.com/maintc/wipe-cli/internal/version.GitCommit=$(GIT_COMMIT) \
+           -X github.com/maintc/wipe-cli/internal/version.BuildDate=$(BUILD_DATE)
+
 # Build both binaries
 build: check
-	@echo "Building binaries..."
+	@echo "Building binaries (version: $(VERSION))..."
 	@mkdir -p $(BUILD_DIR)
-	go build -o $(BUILD_DIR)/$(CLI_BIN) ./cmd/wipe
-	go build -o $(BUILD_DIR)/$(DAEMON_BIN) ./cmd/wiped
+	go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(CLI_BIN) ./cmd/wipe
+	go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(DAEMON_BIN) ./cmd/wiped
 	@echo "Build complete: $(BUILD_DIR)/$(CLI_BIN), $(BUILD_DIR)/$(DAEMON_BIN)"
 
 # Format code
