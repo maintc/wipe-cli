@@ -27,6 +27,9 @@ var (
 	// installingMutex prevents concurrent Carbon installations
 	installingMutex    sync.Mutex
 	installingBranches = make(map[string]bool)
+	// branchLocks provides per-branch RW locks to coordinate installs vs syncs
+	branchLocks = make(map[string]*sync.RWMutex)
+	branchMutex sync.Mutex
 )
 
 // CarbonRelease represents a Carbon release from the API
@@ -34,6 +37,35 @@ type CarbonRelease struct {
 	Date      string `json:"Date"`
 	Version   string `json:"Version"`
 	CommitURL string `json:"CommitUrl"`
+}
+
+// getBranchLock gets or creates an RWMutex for a specific branch
+func getBranchLock(branch string) *sync.RWMutex {
+	branchMutex.Lock()
+	defer branchMutex.Unlock()
+
+	if lock, exists := branchLocks[branch]; exists {
+		return lock
+	}
+
+	lock := &sync.RWMutex{}
+	branchLocks[branch] = lock
+	return lock
+}
+
+// AcquireReadLock acquires a read lock for a branch (used by syncServer)
+// Returns an unlock function that must be called when done reading
+func AcquireReadLock(branch string) func() {
+	if branch == "" || branch == "main" {
+		branch = "main"
+	}
+	lock := getBranchLock(branch)
+	lock.RLock()
+	log.Printf("Acquired Carbon read lock for branch '%s'", branch)
+	return func() {
+		lock.RUnlock()
+		log.Printf("Released Carbon read lock for branch '%s'", branch)
+	}
 }
 
 // getCarbonPath returns the installation path for a branch
@@ -152,6 +184,17 @@ func InstallCarbon(branch, webhookURL string) error {
 		delete(installingBranches, branch)
 		installingMutex.Unlock()
 	}()
+
+	// Normalize branch for lock acquisition
+	lockBranch := branch
+	if lockBranch == "" {
+		lockBranch = "main"
+	}
+
+	// Acquire WRITE lock for this branch to block syncServer reads during install
+	branchLock := getBranchLock(lockBranch)
+	branchLock.Lock()
+	defer branchLock.Unlock()
 
 	installPath := getCarbonPath(branch)
 	downloadURL := GetCarbonDownloadURL(branch)

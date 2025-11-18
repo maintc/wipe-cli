@@ -2,9 +2,9 @@ package version
 
 // These variables are set at build time via ldflags
 var (
-	Version   = "dev"      // Injected via -ldflags "-X internal/version.Version=v1.2.3"
-	GitCommit = "unknown"  // Injected via -ldflags "-X internal/version.GitCommit=abc123"
-	BuildDate = "unknown"  // Injected via -ldflags "-X internal/version.BuildDate=2024-01-01"
+	Version   = "dev"     // Injected via -ldflags "-X internal/version.Version=v1.2.3"
+	GitCommit = "unknown" // Injected via -ldflags "-X internal/version.GitCommit=abc123"
+	BuildDate = "unknown" // Injected via -ldflags "-X internal/version.BuildDate=2024-01-01"
 )
 
 // GetVersion returns the full version string
@@ -19,4 +19,3 @@ func GetVersion() string {
 func GetFullVersion() string {
 	return "wipe-cli " + GetVersion() + " (built: " + BuildDate + ")"
 }
-

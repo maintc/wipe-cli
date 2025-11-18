@@ -394,17 +394,26 @@ func (s *Scheduler) scheduleJobs() error {
 			),
 			gocron.NewTask(
 				func() {
-					// Look up CURRENT events at execution time
+					// Mark as executing IMMEDIATELY to prevent cancellation during UpdateEvents
 					s.mutex.Lock()
+					s.executingJobs[tk] = true
 					currentEvents, exists := s.jobEvents[tk]
 					s.mutex.Unlock()
+
+					// Ensure we remove the executing mark when done
+					defer func() {
+						s.mutex.Lock()
+						delete(s.executingJobs, tk)
+						s.mutex.Unlock()
+					}()
 
 					if !exists || len(currentEvents) == 0 {
 						log.Printf("No events found for %s at execution time, skipping", tk)
 						return
 					}
 
-					s.executeEventGroup(currentEvents)
+					// Execute without re-marking (already marked above)
+					s.executeEventGroupInternal(currentEvents)
 				},
 			),
 			gocron.WithSingletonMode(gocron.LimitModeReschedule),
@@ -441,28 +450,12 @@ func (s *Scheduler) scheduleJobs() error {
 	return nil
 }
 
-// executeEventGroup executes a group of events that occur at the same time
-func (s *Scheduler) executeEventGroup(events []ScheduledEvent) {
+// executeEventGroupInternal performs the actual event execution
+// Note: The gocron job closure handles marking executingJobs before calling this
+func (s *Scheduler) executeEventGroupInternal(events []ScheduledEvent) {
 	if len(events) == 0 {
 		return
 	}
-
-	// Calculate timeKey for this execution
-	// Truncate to minute precision to match scheduling logic
-	eventTime := events[0].Scheduled.Truncate(time.Minute)
-	timeKey := eventTime.Format(time.RFC3339)
-
-	// Mark this job as executing
-	s.mutex.Lock()
-	s.executingJobs[timeKey] = true
-	s.mutex.Unlock()
-
-	// Ensure we remove the executing mark when done
-	defer func() {
-		s.mutex.Lock()
-		delete(s.executingJobs, timeKey)
-		s.mutex.Unlock()
-	}()
 
 	// Process all events together (restarts and wipes in single batch)
 	// Extract all servers

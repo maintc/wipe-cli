@@ -136,15 +136,44 @@ func TestE2E_FullIntegration(t *testing.T) {
 	// Add events to calendar (all events at T+90s)
 	scheduleTestEvents(t, calendarServer, servers)
 
+	// SIMULATE_CLOSE_RUST_UPDATE: Delete Rust and trigger update IMMEDIATELY to test race condition
+	if os.Getenv("SIMULATE_CLOSE_RUST_UPDATE") == "1" {
+		t.Log("=== SIMULATING CLOSE RUST UPDATE (Race Condition Test) ===")
+		t.Logf("Deleting /opt/rust/main and steamcmd cache to force full re-download...")
+		if err := os.RemoveAll("/opt/rust/main"); err != nil {
+			t.Fatalf("Failed to delete /opt/rust/main: %v", err)
+		}
+		// Also delete steamcmd cache to force full re-download (~8GB, takes 1-2 minutes)
+		if err := os.RemoveAll("/opt/rust/steamcmd"); err != nil {
+			t.Fatalf("Failed to delete /opt/rust/steamcmd: %v", err)
+		}
+
+		t.Logf("Triggering Rust update check (this will take >1 minute and overlap with event execution)...")
+		go func() {
+			// Trigger update in background - this simulates the daemon's checkForUpdates
+			if err := steamcmd.InstallRustBranch("main", ""); err != nil {
+				t.Logf("Warning: Rust install failed during simulation: %v", err)
+			} else {
+				t.Logf("✓ Simulated Rust update completed")
+			}
+		}()
+
+		// Give it a moment to start acquiring the write lock
+		time.Sleep(2 * time.Second)
+		t.Logf("Rust update started and holding WRITE LOCK on branch 'main'")
+		t.Logf("Event will fire in ~90s while update is still in progress...")
+		t.Logf("When syncServer runs, it should BLOCK waiting for the write lock to release")
+	}
+
 	// Wait for events to be detected (20s buffer for daemon to pick them up)
 	t.Log("Waiting for events to be scheduled...")
 	time.Sleep(20 * time.Second)
 
 	// Wait for batch event to execute (restart + wipe together)
-	// 60s until event + 30s for execution to complete = 90s total, minus 25s already waited = 65s
+	// 90s until event + 30s for execution to complete = 120s total, minus 22s already waited = 98s
 	t.Log("Waiting for batch event to execute (2 restart, 2 wipe)...")
-	t.Log("Events scheduled for ~60s from start, waiting...")
-	time.Sleep(65 * time.Second)
+	t.Log("Events scheduled for ~90s from start, waiting...")
+	time.Sleep(98 * time.Second)
 
 	// Verify all servers were updated
 	t.Log("Verifying all servers were updated...")
@@ -304,8 +333,9 @@ func createTestConfig(t *testing.T, testDir string, servers []config.Server, dis
 
 // scheduleTestEvents adds test events to the calendar
 func scheduleTestEvents(t *testing.T, cs *CalendarServer, servers []config.Server) {
-	// Schedule CURRENT events 60 seconds from now (all in same batch)
-	currentEventTime := time.Now().Add(60 * time.Second)
+	// Schedule CURRENT events 90 seconds from now (all in same batch)
+	// Extra buffer ensures gocron doesn't skip as "past event" during race condition test
+	currentEventTime := time.Now().Add(90 * time.Second)
 
 	// Restart events for us-weekly and us-long (just "restart" as summary)
 	cs.AddEventForServer("us-weekly", "restart-1", "restart", currentEventTime)
@@ -327,7 +357,7 @@ func scheduleTestEvents(t *testing.T, cs *CalendarServer, servers []config.Serve
 	cs.AddEventForServer("us-build", "wipe-future", "wipe", futureEventTime)
 	cs.AddEventForServer("train", "wipe-future", "wipe", futureEventTime)
 
-	t.Logf("Current events scheduled: 2 restart(s), 2 wipe(s) at T+60s")
+	t.Logf("Current events scheduled: 2 restart(s), 2 wipe(s) at T+90s")
 	t.Logf("Future events scheduled: 2 restart(s), 2 wipe(s) at T+61m (outside initial lookahead, appear when current events execute)")
 }
 

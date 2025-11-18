@@ -27,6 +27,9 @@ var (
 	// installingBranches tracks which branches are currently being installed/updated
 	installingBranches = make(map[string]bool)
 	installingMutex    sync.Mutex
+	// branchLocks provides per-branch RW locks to coordinate installs vs syncs
+	branchLocks = make(map[string]*sync.RWMutex)
+	branchMutex sync.Mutex
 )
 
 // EnsureRustBranchInstalled checks if a Rust branch is installed and installs it if not
@@ -61,6 +64,11 @@ func InstallRustBranch(branch, webhookURL string) error {
 		delete(installingBranches, branch)
 		installingMutex.Unlock()
 	}()
+
+	// Acquire WRITE lock for this branch to block syncServer reads during install
+	branchLock := getBranchLock(branch)
+	branchLock.Lock()
+	defer branchLock.Unlock()
 
 	// Acquire global install mutex to prevent concurrent steamcmd operations
 	installMutex.Lock()
@@ -129,6 +137,35 @@ func InstallRustBranch(branch, webhookURL string) error {
 	}
 
 	return nil
+}
+
+// getBranchLock gets or creates an RWMutex for a specific branch
+func getBranchLock(branch string) *sync.RWMutex {
+	branchMutex.Lock()
+	defer branchMutex.Unlock()
+
+	if lock, exists := branchLocks[branch]; exists {
+		return lock
+	}
+
+	lock := &sync.RWMutex{}
+	branchLocks[branch] = lock
+	return lock
+}
+
+// AcquireReadLock acquires a read lock for a branch (used by syncServer)
+// Returns an unlock function that must be called when done reading
+func AcquireReadLock(branch string) func() {
+	if branch == "" {
+		branch = "main"
+	}
+	lock := getBranchLock(branch)
+	lock.RLock()
+	log.Printf("Acquired read lock for branch '%s'", branch)
+	return func() {
+		lock.RUnlock()
+		log.Printf("Released read lock for branch '%s'", branch)
+	}
 }
 
 // getRustInstallPath returns the installation path for a branch

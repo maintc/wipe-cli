@@ -10,8 +10,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/maintc/wipe-cli/internal/carbon"
 	"github.com/maintc/wipe-cli/internal/config"
 	"github.com/maintc/wipe-cli/internal/discord"
+	"github.com/maintc/wipe-cli/internal/steamcmd"
 )
 
 var (
@@ -426,13 +428,22 @@ func SyncServers(servers []config.Server) error {
 func syncServer(server config.Server) error {
 	log.Printf("Updating server: %s", server.Name)
 
-	// Determine source paths based on branch
-	rustSource := filepath.Join("/opt/rust", server.Branch)
-	carbonSource := filepath.Join("/opt/carbon", server.Branch)
-	if server.Branch == "" {
-		rustSource = filepath.Join("/opt/rust", "main")
-		carbonSource = filepath.Join("/opt/carbon", "main")
+	// Acquire READ locks for this branch to prevent reading during install/update
+	// These will block if InstallRustBranch/InstallCarbon are currently running
+	branch := server.Branch
+	if branch == "" {
+		branch = "main"
 	}
+
+	rustUnlock := steamcmd.AcquireReadLock(branch)
+	defer rustUnlock()
+
+	carbonUnlock := carbon.AcquireReadLock(branch)
+	defer carbonUnlock()
+
+	// Determine source paths based on branch
+	rustSource := filepath.Join("/opt/rust", branch)
+	carbonSource := filepath.Join("/opt/carbon", branch)
 
 	// Update Rust
 	log.Printf("  Updating Rust from %s to %s", rustSource, server.Path)

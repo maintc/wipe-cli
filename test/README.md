@@ -33,7 +33,18 @@ E2E_TEST=1 E2E_SERVER_PATH=/var/www/servers go test -v ./test/... -timeout 15m
 # With custom Discord webhook
 E2E_DISCORD_WEBHOOK="https://discord.com/api/webhooks/YOUR_WEBHOOK" \
 E2E_TEST=1 E2E_SERVER_PATH=/var/www/servers go test -v ./test/... -timeout 15m
+
+# Race Condition Test: Overlapping Rust Update
+# This deletes /opt/rust/main after scheduling to trigger a full reinstall
+# that overlaps with event execution, verifying RWMutex protection
+E2E_TEST=1 SIMULATE_CLOSE_RUST_UPDATE=1 go test -v ./test/... -timeout 15m
 ```
+
+**What the Race Condition Test Does:**
+- Deletes `/opt/rust/main` after events are scheduled
+- Triggers full Rust reinstall (~1-2 min) during event execution
+- Event's `syncServer` acquires read lock and waits for install
+- Verifies no corrupted files are copied
 
 ---
 
@@ -45,6 +56,7 @@ The test reads configuration from a `.env` file in the `test/` directory or from
 - `E2E_SERVER_PATH` - Server base path (default: `/var/www/servers`)
 - `E2E_DISCORD_WEBHOOK` - Discord webhook URL (optional, notifications disabled if not set)
 - `E2E_CALENDAR_URL` - Use existing calendar server (optional, see [Calendar Server](#calendar-server))
+- `SIMULATE_CLOSE_RUST_UPDATE=1` - **Optional**: Race condition test - deletes `/opt/rust/main` after scheduling to trigger a full reinstall that overlaps with event execution, verifying RWMutex protection
 
 **Setup:**
 ```bash
@@ -92,6 +104,7 @@ T+90s:   Test verifies:
 
 - **First run**: ~10-15 minutes (Rust download ~8GB)
 - **Subsequent runs**: ~90 seconds (cached installations)
+- **With `SIMULATE_CLOSE_RUST_UPDATE=1`**: ~3-4 minutes (forces full Rust reinstall during event execution)
 
 ---
 
