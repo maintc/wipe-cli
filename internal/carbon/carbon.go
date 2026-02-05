@@ -16,11 +16,11 @@ import (
 )
 
 const (
-	CarbonAPIURL     = "https://api.carbonmod.gg/meta/carbon/changelogs.json"
-	CarbonBase       = "/opt/carbon"
-	CarbonMainURL    = "https://github.com/CarbonCommunity/Carbon/releases/download/production_build/Carbon.Linux.Release.tar.gz"
-	CarbonStagingURL = "https://github.com/CarbonCommunity/Carbon/releases/download/rustbeta_staging_build/Carbon.Linux.Debug.tar.gz"
-	RustEditURL      = "https://github.com/k1lly0u/Oxide.Ext.RustEdit/raw/master/Oxide.Ext.RustEdit.dll"
+	CarbonReleasesAPI = "https://api.carbonmod.gg/releases/"
+	CarbonBase        = "/opt/carbon"
+	CarbonMainURL     = "https://github.com/CarbonCommunity/Carbon/releases/download/production_build/Carbon.Linux.Release.tar.gz"
+	CarbonStagingURL  = "https://github.com/CarbonCommunity/Carbon/releases/download/rustbeta_staging_build/Carbon.Linux.Debug.tar.gz"
+	RustEditURL       = "https://github.com/k1lly0u/Oxide.Ext.RustEdit/raw/master/Oxide.Ext.RustEdit.dll"
 )
 
 var (
@@ -34,9 +34,12 @@ var (
 
 // CarbonRelease represents a Carbon release from the API
 type CarbonRelease struct {
-	Date      string `json:"Date"`
-	Version   string `json:"Version"`
-	CommitURL string `json:"CommitUrl"`
+	Name       string `json:"name"`
+	Version    string `json:"version"`
+	DateString string `json:"date_string"`
+	Date       int64  `json:"date"`
+	Protocol   string `json:"protocol"`
+	Prerelease bool   `json:"prerelease"`
 }
 
 // getBranchLock gets or creates an RWMutex for a specific branch
@@ -102,7 +105,7 @@ func CheckForCarbonUpdates(branch, webhookURL string) (bool, string, error) {
 	currentVersion := strings.TrimSpace(string(currentVersionData))
 
 	// Get latest version from Carbon API
-	latestVersion, err := getLatestCarbonVersion()
+	latestVersion, err := getLatestCarbonVersion(branch)
 	if err != nil {
 		log.Printf("Error checking for Carbon updates: %v", err)
 		return false, "", err
@@ -123,9 +126,22 @@ func CheckForCarbonUpdates(branch, webhookURL string) (bool, string, error) {
 	return false, currentVersion, nil
 }
 
-// getLatestCarbonVersion queries the Carbon API for the latest version
-func getLatestCarbonVersion() (string, error) {
-	resp, err := http.Get(CarbonAPIURL)
+// getBuildNameForBranch returns the Carbon build name for a given branch
+func getBuildNameForBranch(branch string) string {
+	if branch == "" || branch == "main" {
+		return "production_build"
+	}
+	if branch == "staging" {
+		return "rustbeta_staging_build"
+	}
+	// Default to production for unknown branches
+	log.Printf("Warning: Unknown Carbon branch '%s', defaulting to production_build", branch)
+	return "production_build"
+}
+
+// getLatestCarbonVersion queries the Carbon API for the latest version of a branch
+func getLatestCarbonVersion(branch string) (string, error) {
+	resp, err := http.Get(CarbonReleasesAPI)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch Carbon API: %w", err)
 	}
@@ -149,8 +165,15 @@ func getLatestCarbonVersion() (string, error) {
 		return "", fmt.Errorf("no Carbon releases found")
 	}
 
-	// First entry is the latest
-	return releases[0].Version, nil
+	// Find the release matching the branch's build name
+	buildName := getBuildNameForBranch(branch)
+	for _, release := range releases {
+		if release.Name == buildName {
+			return release.Version, nil
+		}
+	}
+
+	return "", fmt.Errorf("no Carbon release found for build '%s'", buildName)
 }
 
 // GetCarbonDownloadURL returns the download URL for a Carbon branch
@@ -240,7 +263,7 @@ func InstallCarbon(branch, webhookURL string) error {
 	}
 
 	// Get latest version from API and save it
-	version, err := getLatestCarbonVersion()
+	version, err := getLatestCarbonVersion(branch)
 	if err != nil {
 		log.Printf("Warning: Could not get Carbon version: %v", err)
 		version = "unknown"

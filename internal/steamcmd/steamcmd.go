@@ -219,27 +219,27 @@ func updateRustBranch(branch, installPath string) error {
 
 	log.Printf("Running steamcmd to install Rust (branch: %s)...", branch)
 
-	// Build steamcmd command
-	// +force_install_dir <path> +login anonymous +app_update 258550 <branch_opts> validate +quit
-	cmd := exec.Command(steamcmdBinary,
-		"+force_install_dir", installPath,
-		"+login", "anonymous",
-		"+app_update", RustAppID)
-
-	// Add branch opts if any
-	if branchOpts != "" {
-		cmd.Args = append(cmd.Args, strings.Fields(branchOpts)...)
-	}
-
-	cmd.Args = append(cmd.Args, "validate", "+quit")
-
-	// Set environment to avoid terminal issues
-	cmd.Env = append(os.Environ(), "TERM=xterm")
-
 	// Run command with retries
 	maxRetries := 3
 	for i := 0; i < maxRetries; i++ {
 		log.Printf("Attempt %d/%d...", i+1, maxRetries)
+
+		// Build steamcmd command fresh each attempt (exec.Cmd cannot be reused)
+		// +force_install_dir <path> +login anonymous +app_update 258550 <branch_opts> validate +quit
+		cmd := exec.Command(steamcmdBinary,
+			"+force_install_dir", installPath,
+			"+login", "anonymous",
+			"+app_update", RustAppID)
+
+		// Add branch opts if any
+		if branchOpts != "" {
+			cmd.Args = append(cmd.Args, strings.Fields(branchOpts)...)
+		}
+
+		cmd.Args = append(cmd.Args, "validate", "+quit")
+
+		// Set environment to avoid terminal issues
+		cmd.Env = append(os.Environ(), "TERM=xterm")
 
 		output, err := cmd.CombinedOutput()
 		if err == nil {

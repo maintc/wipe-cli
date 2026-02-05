@@ -7,8 +7,10 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/maintc/wipe-cli/internal/carbon"
 	"github.com/maintc/wipe-cli/internal/config"
 	"github.com/maintc/wipe-cli/internal/executor"
+	"github.com/maintc/wipe-cli/internal/steamcmd"
 	"github.com/maintc/wipe-cli/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -488,19 +490,6 @@ WARNING: This will overwrite any customizations you've made to these scripts.`,
 
 		fmt.Println("🔄 Resetting scripts...")
 
-		// Import executor package
-		executor := struct {
-			HookScriptPath         string
-			StopServersScriptPath  string
-			StartServersScriptPath string
-			GenerateMapsScriptPath string
-		}{
-			HookScriptPath:         "/opt/wiped/pre-start-hook.sh",
-			StopServersScriptPath:  "/opt/wiped/stop-servers.sh",
-			StartServersScriptPath: "/opt/wiped/start-servers.sh",
-			GenerateMapsScriptPath: "/opt/wiped/generate-maps.sh",
-		}
-
 		scriptsRemoved := 0
 		scriptsToRemove := []string{
 			executor.HookScriptPath,
@@ -522,11 +511,28 @@ WARNING: This will overwrite any customizations you've made to these scripts.`,
 
 		if scriptsRemoved > 0 {
 			fmt.Printf("\n✓ Removed %d script(s)\n", scriptsRemoved)
-			fmt.Println("\nTo regenerate the scripts, restart the wiped service:")
-			fmt.Println("  sudo systemctl restart wiped@$USER.service")
 		} else {
 			fmt.Println("ℹ️  No scripts found to remove")
 		}
+
+		// Regenerate scripts immediately
+		fmt.Println("\n🔄 Regenerating scripts...")
+
+		if err := executor.EnsureHookScript(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating pre-start-hook.sh: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("  ✓ Created pre-start-hook.sh")
+
+		if err := executor.EnsureWipeScripts(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating management scripts: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("  ✓ Created stop-servers.sh")
+		fmt.Println("  ✓ Created start-servers.sh")
+		fmt.Println("  ✓ Created generate-maps.sh")
+
+		fmt.Println("\n✓ All scripts reset to defaults")
 	},
 }
 
@@ -602,6 +608,139 @@ var mentionRemoveRoleCmd = &cobra.Command{
 	},
 }
 
+var updateSourceCmd = &cobra.Command{
+	Use:   "update-source",
+	Short: "Download latest Rust and Carbon versions",
+	Long: `Manually download and install the latest Rust server files and Carbon mod.
+
+This command updates the source installations in /opt/rust and /opt/carbon.
+It does NOT sync these files to your servers - use 'wipe sync' for that.
+
+By default, updates all branches configured in your servers. Use --branch to
+update a specific branch only.
+
+Examples:
+  wipe update-source                    # Update all configured branches
+  wipe update-source --branch main      # Update only the main branch
+  wipe update-source --rust-only        # Only update Rust (skip Carbon)
+  wipe update-source --carbon-only      # Only update Carbon (skip Rust)`,
+	Run: func(cmd *cobra.Command, args []string) {
+		branch, _ := cmd.Flags().GetString("branch")
+		rustOnly, _ := cmd.Flags().GetBool("rust-only")
+		carbonOnly, _ := cmd.Flags().GetBool("carbon-only")
+
+		// Initialize logger
+		log.SetOutput(os.Stdout)
+		log.SetFlags(log.LstdFlags)
+
+		// Get config for webhook and branches
+		cfg, err := config.GetConfig()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Determine which branches to update
+		branches := make(map[string]bool)
+		if branch != "" {
+			branches[branch] = true
+		} else {
+			// Collect unique branches from configured servers
+			for _, server := range cfg.Servers {
+				if server.Branch != "" {
+					branches[server.Branch] = true
+				}
+			}
+			// Default to main if no servers configured
+			if len(branches) == 0 {
+				branches["main"] = true
+			}
+		}
+
+		webhookURL := cfg.DiscordWebhook
+
+		fmt.Printf("🔄 Updating source installations for %d branch(es)...\n\n", len(branches))
+
+		hasErrors := false
+
+		// Update Rust for each branch
+		if !carbonOnly {
+			for b := range branches {
+				fmt.Printf("📦 Checking Rust updates for branch '%s'...\n", b)
+				hasUpdate, buildID, err := steamcmd.CheckForUpdates(b, webhookURL)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "   ❌ Error checking Rust updates: %v\n", err)
+					hasErrors = true
+					continue
+				}
+
+				if hasUpdate {
+					fmt.Printf("   ⬇️  Update available (build: %s), downloading...\n", buildID)
+					if err := steamcmd.InstallRustBranch(b, webhookURL); err != nil {
+						fmt.Fprintf(os.Stderr, "   ❌ Error installing Rust: %v\n", err)
+						hasErrors = true
+					} else {
+						fmt.Printf("   ✓ Rust branch '%s' updated to build %s\n", b, buildID)
+					}
+				} else if buildID != "" {
+					fmt.Printf("   ✓ Rust branch '%s' is up to date (build: %s)\n", b, buildID)
+				} else {
+					fmt.Printf("   ℹ️  Rust branch '%s' not installed yet, installing...\n", b)
+					if err := steamcmd.InstallRustBranch(b, webhookURL); err != nil {
+						fmt.Fprintf(os.Stderr, "   ❌ Error installing Rust: %v\n", err)
+						hasErrors = true
+					} else {
+						fmt.Printf("   ✓ Rust branch '%s' installed\n", b)
+					}
+				}
+			}
+			fmt.Println()
+		}
+
+		// Update Carbon for each branch
+		if !rustOnly {
+			for b := range branches {
+				fmt.Printf("📦 Checking Carbon updates for branch '%s'...\n", b)
+				hasUpdate, version, err := carbon.CheckForCarbonUpdates(b, webhookURL)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "   ❌ Error checking Carbon updates: %v\n", err)
+					hasErrors = true
+					continue
+				}
+
+				if hasUpdate {
+					fmt.Printf("   ⬇️  Update available (version: %s), downloading...\n", version)
+					if err := carbon.InstallCarbon(b, webhookURL); err != nil {
+						fmt.Fprintf(os.Stderr, "   ❌ Error installing Carbon: %v\n", err)
+						hasErrors = true
+					} else {
+						fmt.Printf("   ✓ Carbon for branch '%s' updated to version %s\n", b, version)
+					}
+				} else if version != "" {
+					fmt.Printf("   ✓ Carbon for branch '%s' is up to date (version: %s)\n", b, version)
+				} else {
+					fmt.Printf("   ℹ️  Carbon for branch '%s' not installed yet, installing...\n", b)
+					if err := carbon.InstallCarbon(b, webhookURL); err != nil {
+						fmt.Fprintf(os.Stderr, "   ❌ Error installing Carbon: %v\n", err)
+						hasErrors = true
+					} else {
+						fmt.Printf("   ✓ Carbon for branch '%s' installed\n", b)
+					}
+				}
+			}
+			fmt.Println()
+		}
+
+		if hasErrors {
+			fmt.Println("⚠️  Update completed with errors")
+			os.Exit(1)
+		}
+
+		fmt.Println("✓ All source updates complete")
+		fmt.Println("\nℹ️  To sync these updates to your servers, run: wipe sync <server-names>")
+	},
+}
+
 func main() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -643,6 +782,11 @@ func init() {
 	callScriptCmd.Flags().StringP("script", "s", "", "Script name to call (required): stop-servers, start-servers, generate-maps")
 	callScriptCmd.MarkFlagRequired("script")
 
+	// Add flags for update-source command
+	updateSourceCmd.Flags().StringP("branch", "b", "", "Update only a specific branch (default: all configured branches)")
+	updateSourceCmd.Flags().Bool("rust-only", false, "Only update Rust (skip Carbon)")
+	updateSourceCmd.Flags().Bool("carbon-only", false, "Only update Carbon (skip Rust)")
+
 	// Add subcommands
 	rootCmd.AddCommand(addCmd)
 	rootCmd.AddCommand(listCmd)
@@ -653,6 +797,7 @@ func init() {
 	rootCmd.AddCommand(resetScriptsCmd)
 	rootCmd.AddCommand(callScriptCmd)
 	rootCmd.AddCommand(mentionCmd)
+	rootCmd.AddCommand(updateSourceCmd)
 	configCmd.AddCommand(configSetCmd)
 	mentionCmd.AddCommand(mentionAddUserCmd)
 	mentionCmd.AddCommand(mentionRemoveUserCmd)
