@@ -85,7 +85,14 @@ func InstallRustBranch(branch, webhookURL string) error {
 		return fmt.Errorf("%s", errMsg)
 	}
 
-	// Create branch install directory
+	// Remove old branch directory to avoid stale files from previous versions
+	if err := os.RemoveAll(installPath); err != nil {
+		errMsg := fmt.Sprintf("failed to remove old branch directory: %v", err)
+		discord.SendError(webhookURL, "Rust Installation Failed", fmt.Sprintf("Failed to install Rust branch **%s**\n\n%s", branch, errMsg))
+		return fmt.Errorf("%s", errMsg)
+	}
+
+	// Create fresh branch install directory
 	if err := os.MkdirAll(installPath, 0755); err != nil {
 		errMsg := fmt.Sprintf("failed to create branch directory: %v", err)
 		discord.SendError(webhookURL, "Rust Installation Failed", fmt.Sprintf("Failed to install Rust branch **%s**\n\n%s", branch, errMsg))

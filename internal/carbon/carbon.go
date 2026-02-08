@@ -224,7 +224,15 @@ func InstallCarbon(branch, webhookURL string) error {
 
 	log.Printf("Installing Carbon for branch '%s' to %s", branch, installPath)
 
-	// Create Carbon directory
+	// Remove old branch directory to avoid stale files from previous versions
+	if err := os.RemoveAll(installPath); err != nil {
+		errMsg := fmt.Sprintf("failed to remove old Carbon directory: %v", err)
+		discord.SendError(webhookURL, "Carbon Installation Failed",
+			fmt.Sprintf("Failed to install Carbon for branch **%s**\n\n%s", branch, errMsg))
+		return fmt.Errorf("%s", errMsg)
+	}
+
+	// Create fresh Carbon directory
 	if err := os.MkdirAll(installPath, 0755); err != nil {
 		errMsg := fmt.Sprintf("failed to create Carbon directory: %v", err)
 		discord.SendError(webhookURL, "Carbon Installation Failed",
