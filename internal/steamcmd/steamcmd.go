@@ -78,6 +78,13 @@ func InstallRustBranch(branch, webhookURL string) error {
 
 	log.Printf("Installing Rust branch '%s' to %s", branch, installPath)
 
+	// Read old buildid BEFORE wiping the directory
+	oldBuildID := ""
+	buildidPath := filepath.Join(installPath, "buildid")
+	if data, err := os.ReadFile(buildidPath); err == nil {
+		oldBuildID = strings.TrimSpace(string(data))
+	}
+
 	// Create base rust directory
 	if err := os.MkdirAll(RustInstallBase, 0755); err != nil {
 		errMsg := fmt.Sprintf("failed to create rust base directory: %v", err)
@@ -104,20 +111,6 @@ func InstallRustBranch(branch, webhookURL string) error {
 		errMsg := fmt.Sprintf("failed to setup steamcmd: %v", err)
 		discord.SendError(webhookURL, "Rust Installation Failed", fmt.Sprintf("Failed to install Rust branch **%s**\n\n%s", branch, errMsg))
 		return fmt.Errorf("%s", errMsg)
-	}
-
-	// Create buildid file
-	buildidPath := filepath.Join(installPath, "buildid")
-	if err := os.WriteFile(buildidPath, []byte(""), 0644); err != nil {
-		errMsg := fmt.Sprintf("failed to create buildid file: %v", err)
-		discord.SendError(webhookURL, "Rust Installation Failed", fmt.Sprintf("Failed to install Rust branch **%s**\n\n%s", branch, errMsg))
-		return fmt.Errorf("%s", errMsg)
-	}
-
-	// Read old buildid
-	oldBuildID := ""
-	if data, err := os.ReadFile(buildidPath); err == nil {
-		oldBuildID = string(data)
 	}
 
 	// Install/update the branch

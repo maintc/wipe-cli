@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 
 	"github.com/spf13/viper"
@@ -60,7 +61,9 @@ func InitConfig() {
 		configPath = filepath.Dir(CustomConfigPath)
 	} else {
 		// Default path
-		home, err := os.UserHomeDir()
+		// When running under sudo, os.UserHomeDir() returns /root.
+		// Use SUDO_USER to resolve the original user's home directory.
+		home, err := getEffectiveHomeDir()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error getting home directory: %v\n", err)
 			return
@@ -96,6 +99,20 @@ func InitConfig() {
 			}
 		}
 	}
+}
+
+// getEffectiveHomeDir returns the home directory of the effective user.
+// When running under sudo, it uses SUDO_USER to find the original user's
+// home directory instead of /root.
+func getEffectiveHomeDir() (string, error) {
+	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
+		u, err := user.Lookup(sudoUser)
+		if err != nil {
+			return "", fmt.Errorf("failed to look up SUDO_USER %q: %w", sudoUser, err)
+		}
+		return u.HomeDir, nil
+	}
+	return os.UserHomeDir()
 }
 
 // GetConfig returns the current configuration
