@@ -197,8 +197,8 @@ func setupSteamCMD() error {
 
 	log.Println("Extracting SteamCMD...")
 
-	// Extract steamcmd
-	cmd := exec.Command("tar", "-xzf", tarPath, "-C", SteamCMDBase)
+	// Extract steamcmd (--no-same-owner ensures files are owned by running user)
+	cmd := exec.Command("tar", "--no-same-owner", "-xzf", tarPath, "-C", SteamCMDBase)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to extract steamcmd: %w\nOutput: %s", err, output)
 	}

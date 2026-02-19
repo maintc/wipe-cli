@@ -1,6 +1,8 @@
 package carbon
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -224,7 +226,53 @@ func InstallCarbon(branch, webhookURL string) error {
 
 	log.Printf("Installing Carbon for branch '%s' to %s", branch, installPath)
 
-	// Remove old branch directory to avoid stale files from previous versions
+	// Read old tarball hash BEFORE wiping the directory
+	oldHash := ""
+	hashPath := filepath.Join(installPath, "hash.txt")
+	if data, err := os.ReadFile(hashPath); err == nil {
+		oldHash = strings.TrimSpace(string(data))
+	}
+
+	// Read old version for notifications
+	oldVersion := ""
+	versionPath := filepath.Join(installPath, "version.txt")
+	if data, err := os.ReadFile(versionPath); err == nil {
+		oldVersion = strings.TrimSpace(string(data))
+	}
+
+	// Download Carbon to a temp file first so we can hash before committing
+	tmpTarPath := filepath.Join(os.TempDir(), fmt.Sprintf("carbon-%s.tar.gz", branch))
+	log.Printf("Downloading Carbon from %s...", downloadURL)
+
+	if err := downloadFile(downloadURL, tmpTarPath); err != nil {
+		errMsg := fmt.Sprintf("failed to download Carbon: %v", err)
+		discord.SendError(webhookURL, "Carbon Installation Failed",
+			fmt.Sprintf("Failed to install Carbon for branch **%s**\n\n%s", branch, errMsg))
+		return fmt.Errorf("%s", errMsg)
+	}
+	defer os.Remove(tmpTarPath) // Clean up temp file
+
+	// Hash the downloaded tarball
+	newHash, err := hashFile(tmpTarPath)
+	if err != nil {
+		log.Printf("Warning: Could not hash downloaded tarball: %v", err)
+		// Continue anyway - better to install than skip
+	}
+
+	// If hash matches the old install, the CDN served stale content
+	if oldHash != "" && newHash == oldHash {
+		log.Printf("Warning: Downloaded Carbon tarball hash matches previous install (hash: %s)", newHash[:12])
+		log.Printf("The download source may be serving cached/stale content — skipping update")
+		discord.SendWarning(webhookURL, "Carbon Update Stale",
+			fmt.Sprintf("Carbon update for branch **%s** was detected by the API, "+
+				"but the download source served identical content (possible CDN cache).\n\n"+
+				"The update will be retried on the next check cycle.", branch))
+		return nil
+	}
+
+	// Content is different — proceed with installation
+
+	// Remove old branch directory
 	if err := os.RemoveAll(installPath); err != nil {
 		errMsg := fmt.Sprintf("failed to remove old Carbon directory: %v", err)
 		discord.SendError(webhookURL, "Carbon Installation Failed",
@@ -240,18 +288,18 @@ func InstallCarbon(branch, webhookURL string) error {
 		return fmt.Errorf("%s", errMsg)
 	}
 
-	// Download Carbon
+	// Move tarball into install directory and extract
 	tarPath := filepath.Join(installPath, "carbon.tar.gz")
-	log.Printf("Downloading Carbon from %s...", downloadURL)
-
-	if err := downloadFile(downloadURL, tarPath); err != nil {
-		errMsg := fmt.Sprintf("failed to download Carbon: %v", err)
-		discord.SendError(webhookURL, "Carbon Installation Failed",
-			fmt.Sprintf("Failed to install Carbon for branch **%s**\n\n%s", branch, errMsg))
-		return fmt.Errorf("%s", errMsg)
+	if err := os.Rename(tmpTarPath, tarPath); err != nil {
+		// Rename may fail across filesystems, fall back to copy
+		if err := copyFile(tmpTarPath, tarPath); err != nil {
+			errMsg := fmt.Sprintf("failed to move Carbon tarball: %v", err)
+			discord.SendError(webhookURL, "Carbon Installation Failed",
+				fmt.Sprintf("Failed to install Carbon for branch **%s**\n\n%s", branch, errMsg))
+			return fmt.Errorf("%s", errMsg)
+		}
 	}
 
-	// Extract Carbon
 	log.Printf("Extracting Carbon...")
 	if err := extractTarGz(tarPath, installPath); err != nil {
 		errMsg := fmt.Sprintf("failed to extract Carbon: %v", err)
@@ -277,17 +325,28 @@ func InstallCarbon(branch, webhookURL string) error {
 		version = "unknown"
 	}
 
-	versionPath := filepath.Join(installPath, "version.txt")
 	if err := os.WriteFile(versionPath, []byte(version), 0644); err != nil {
 		log.Printf("Warning: Could not write version file: %v", err)
+	}
+
+	// Save tarball hash for future comparison
+	if newHash != "" {
+		if err := os.WriteFile(hashPath, []byte(newHash), 0644); err != nil {
+			log.Printf("Warning: Could not write hash file: %v", err)
+		}
 	}
 
 	// Clean up tar file
 	os.Remove(tarPath)
 
 	log.Printf("✓ Successfully installed Carbon for branch '%s' (version: %s)", branch, version)
-	discord.SendSuccess(webhookURL, "Carbon Installation Complete",
-		fmt.Sprintf("Carbon for branch **%s** installed successfully\n\nVersion: **%s**", branch, version))
+	if oldVersion != "" && oldVersion != version {
+		discord.SendSuccess(webhookURL, "Carbon Update Complete",
+			fmt.Sprintf("Carbon for branch **%s** updated\n\nFrom: **%s**\nTo: **%s**", branch, oldVersion, version))
+	} else {
+		discord.SendSuccess(webhookURL, "Carbon Installation Complete",
+			fmt.Sprintf("Carbon for branch **%s** installed successfully\n\nVersion: **%s**", branch, version))
+	}
 
 	return nil
 }
@@ -304,6 +363,41 @@ func EnsureCarbonInstalled(branch, webhookURL string) error {
 
 	log.Printf("Carbon for branch '%s' not found at %s, installing...", branch, installPath)
 	return InstallCarbon(branch, webhookURL)
+}
+
+// hashFile computes the SHA-256 hash of a file
+func hashFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// copyFile copies a file from src to dst
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Close()
 }
 
 // downloadFile downloads a file from a URL
@@ -330,8 +424,9 @@ func downloadFile(url, filepath string) error {
 
 // extractTarGz extracts a tar.gz file to a destination
 func extractTarGz(tarPath, destPath string) error {
-	// Use tar command to extract
-	cmd := exec.Command("tar", "-xzf", tarPath, "-C", destPath)
+	// Use --no-same-owner so files are owned by the running user
+	// instead of preserving UIDs from the archive (e.g. 1001:1001)
+	cmd := exec.Command("tar", "--no-same-owner", "-xzf", tarPath, "-C", destPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("tar extraction failed: %w\nOutput: %s", err, output)
